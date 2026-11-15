@@ -11,3 +11,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.button{transition:none}}
 h1{font-size:4.8rem}h2{font-size:2.8rem}.benefits-grid h2{font-size:2.3rem}
 @media(max-width:700px){h1{font-size:3.4rem}h2{font-size:2.15rem}.benefits-grid h2{font-size:1.9rem}}
+.header-inner{flex-wrap:wrap;gap:1rem}.site-header nav{flex-wrap:wrap}.language-switch{display:inline-flex;border:1px solid #b9d0c4;border-radius:3px;flex-shrink:0}.language-switch button{border:0;background:transparent;color:#fff;padding:.4rem .65rem;min-height:40px}.language-switch button[aria-pressed="true"]{background:#f7f4e9;color:#102c29;font-weight:700}
+html[lang="bn"]{font-family:'Noto Sans Bengali','Nirmala UI','Vrinda',sans-serif}html[lang="bn"] h1,html[lang="bn"] h2,html[lang="bn"] h3,html[lang="bn"] .hero-lede,html[lang="bn"] .vision-grid p:last-child,html[lang="bn"] .cover-title{font-family:'Noto Serif Bengali','Nirmala UI','Vrinda',serif;line-height:1.4}html[lang="bn"] .eyebrow,html[lang="bn"] .book-category,html[lang="bn"] .cover-small{text-transform:none;letter-spacing:0}html[lang="bn"] .progress-list li{line-height:1.5}html[lang="bn"] .book-body h3{line-height:1.4}
+.book-card,.journey-card,.steps>div,.benefits-grid>div{min-width:0;overflow-wrap:anywhere}.progress-list{min-width:0}.progress-list li{min-width:0;overflow-wrap:anywhere}.book-cover{overflow-wrap:anywhere}
+@media(max-width:700px){.header-inner{align-items:flex-start}.language-switch{margin-top:.25rem}.progress-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}

@@ -11,6 +11,7 @@
     var nextId = 1;
     var notice = '';
     var storageWorks = !!storage;
+    var noticeCode = '';
 
     function validSnapshot(snapshot) {
       if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.requests) || !Number.isSafeInteger(snapshot.nextId) || snapshot.nextId < 1) return false;
@@ -39,13 +40,16 @@
         }
       } else {
         notice = 'Browser storage is unavailable. Changes will last only until this page closes.';
+        noticeCode = 'noticeUnavailable';
       }
     } catch (error) {
       if (error instanceof SyntaxError || error.message === 'Invalid demo state') {
         notice = 'Saved demo data could not be read. A fresh demo is shown.';
+        noticeCode = 'noticeInvalid';
       } else {
         storageWorks = false;
         notice = 'Browser storage is unavailable. Changes will last only until this page closes.';
+        noticeCode = 'noticeUnavailable';
       }
     }
 
@@ -56,6 +60,7 @@
       } catch (error) {
         storageWorks = false;
         notice = 'Browser storage is unavailable. Changes will last only until this page closes.';
+        noticeCode = 'noticeUnavailable';
       }
     }
 
@@ -65,11 +70,12 @@
 
     return {
       getNotice: function () { return notice; },
+      getNoticeCode: function () { return noticeCode; },
       listBooks: function () { return books.slice(); },
       findBooks: function (query, locationId, availability) {
         var term = query.trim().toLocaleLowerCase();
         return books.filter(function (book) {
-          var searchable = [book.title, book.author, book.category, book.topics].join(' ').toLocaleLowerCase();
+          var searchable = [book.title, book.titleBn, book.author, book.authorBn, book.category, book.topics, book.topicsBn].join(' ').toLocaleLowerCase();
           return (!term || searchable.includes(term)) &&
             (locationId === 'all' || book.locationId === locationId) &&
             (availability === 'all' || (availability === 'available') === !activeRequest(book.id));
@@ -79,21 +85,21 @@
       listRequests: function () { return requests.slice().reverse().map(function (request) { return Object.assign({}, request); }); },
       isAvailable: function (bookId) { return bookIds.has(bookId) && !activeRequest(bookId); },
       createRequest: function (bookId) {
-        if (!bookIds.has(bookId)) return { ok: false, message: 'This copy is not in the sample catalogue.' };
-        if (activeRequest(bookId)) return { ok: false, message: 'This copy already has an active demo request.' };
+        if (!bookIds.has(bookId)) return { ok: false, code: 'requestUnknownBook', message: 'This copy is not in the sample catalogue.' };
+        if (activeRequest(bookId)) return { ok: false, code: 'requestDuplicate', message: 'This copy already has an active demo request.' };
         var request = { id: nextId++, bookId: bookId, stage: 'requested' };
         requests.push(request);
         save();
-        return { ok: true, request: Object.assign({}, request), message: 'Demo request created. No real reservation was sent.' };
+        return { ok: true, code: 'requestCreated', request: Object.assign({}, request), message: 'Demo request created. No real reservation was sent.' };
       },
       advanceRequest: function (id, nextStage) {
         var request = requests.find(function (item) { return item.id === id; });
-        if (!request) return { ok: false, message: 'Demo request not found.' };
+        if (!request) return { ok: false, code: 'requestMissing', message: 'Demo request not found.' };
         var index = STAGES.indexOf(request.stage);
-        if (index === STAGES.length - 1 || STAGES[index + 1] !== nextStage) return { ok: false, message: 'That status change is not allowed.' };
+        if (index === STAGES.length - 1 || STAGES[index + 1] !== nextStage) return { ok: false, code: 'stageInvalid', message: 'That status change is not allowed.' };
         request.stage = nextStage;
         save();
-        return { ok: true, message: 'Demo status changed to ' + nextStage + '.' };
+        return { ok: true, code: 'stageChanged', stage: nextStage, message: 'Demo status changed to ' + nextStage + '.' };
       },
       reset: function () {
         requests = [];
@@ -103,9 +109,10 @@
           catch (error) {
             storageWorks = false;
             notice = 'Browser storage is unavailable. Changes will last only until this page closes.';
+            noticeCode = 'noticeUnavailable';
           }
         }
-        return { ok: true, message: 'Demo reset. All sample copies are available again.' };
+        return { ok: true, code: 'resetDone', message: 'Demo reset. All sample copies are available again.' };
       }
     };
   }
