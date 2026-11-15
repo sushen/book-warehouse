@@ -15,13 +15,53 @@
   var requestList = document.getElementById('request-list');
   var feedback = document.getElementById('action-feedback');
   var stages = ['requested', 'ready', 'borrowed', 'returned'];
-  var stageLabels = { requested: 'Requested', ready: 'Ready for collection', borrowed: 'Borrowed', returned: 'Returned' };
-  var nextLabels = { requested: 'Mark ready for collection', ready: 'Mark borrowed', borrowed: 'Mark returned' };
+  var localeKey = 'book-warehouse-locale';
+  var locale = 'bn';
+  var lastFeedback = null;
+  try {
+    var savedLocale = storage && storage.getItem(localeKey);
+    if (savedLocale === 'en' || savedLocale === 'bn') locale = savedLocale;
+  } catch (error) { /* The default remains usable without storage. */ }
+
+  function t(key, values) { return window.BookWarehouseLocales.translate(locale, key, values); }
+  function bookText(book, field) { return locale === 'bn' ? book[field + 'Bn'] || book[field] : book[field]; }
+  function placeName(place) { return locale === 'bn' ? place.nameBn || place.name : place.name; }
+  function stageLabel(stage) { return t('stage' + stage[0].toUpperCase() + stage.slice(1)); }
+  function nextLabel(stage) { return t('next' + stage[0].toUpperCase() + stage.slice(1)); }
+  function localizedResult(result, extra) {
+    if (!result.code) return result.message;
+    var values = result.stage ? { stage: stageLabel(result.stage) } : null;
+    return t(result.code, values) + (extra ? t(extra) : '');
+  }
+
+  var staticText = {
+    '.skip-link': 'skip', '.brand > span:last-child': 'brand', '.site-header nav a[href="#how-it-works"]': 'navHow', '.site-header nav a[href="#catalogue"]': 'navCatalogue', '.site-header nav a[href="#journey"]': 'navJourney',
+    '.hero .eyebrow': 'heroEyebrow', '#hero-title': 'brand', '.hero-lede': 'heroLede', '.hero-detail': 'heroDetail', '.hero .button': 'heroLink', '.scene-note': 'sceneNote',
+    '#how-it-works .section-heading .eyebrow': 'howEyebrow', '#how-title': 'howTitle', '.steps > div:nth-child(1) h3': 'step1', '.steps > div:nth-child(1) p': 'step1Body', '.steps > div:nth-child(2) h3': 'step2', '.steps > div:nth-child(2) p': 'step2Body', '.steps > div:nth-child(3) h3': 'step3', '.steps > div:nth-child(3) p': 'step3Body',
+    '.benefits-grid > div:first-child .eyebrow': 'readersEyebrow', '#benefits-title': 'readersTitle', '.benefits-grid > div:first-child p:last-child': 'readersBody', '.benefits-grid > div:last-child .eyebrow': 'partnersEyebrow', '.benefits-grid > div:last-child h2': 'partnersTitle', '.benefits-grid > div:last-child p:last-child': 'partnersBody',
+    '#catalogue .section-top .eyebrow': 'catalogueEyebrow', '#catalogue-title': 'catalogueTitle', '#catalogue .section-top > div:first-child p:last-child': 'catalogueBody', '.demo-note strong': 'demoNoteTitle', '.demo-note span': 'demoNoteBody', 'label[for="search"]': 'searchLabel', 'label[for="location"]': 'locationLabel', '#location option[value="all"]': 'allLocations', 'label[for="availability"]': 'availabilityLabel', '#availability option[value="all"]': 'allCopies', '#availability option[value="available"]': 'available', '#availability option[value="unavailable"]': 'inJourney', '#clear-filters': 'clearFilters', '#empty-results h3': 'noBooks', '#empty-results p': 'noBooksBody', '#empty-clear': 'clearFilters',
+    '#journey .section-top .eyebrow': 'journeyEyebrow', '#journey-title': 'journeyTitle', '#journey .section-top > div:first-child p:last-child': 'journeyBody', '#reset-demo': 'reset', '#empty-journey h3': 'noRequests', '#empty-journey p': 'noRequestsBody', '#empty-journey a': 'browse',
+    '.vision-band .eyebrow': 'visionEyebrow', '#vision-title': 'visionTitle', '.vision-grid > p': 'visionBody', '.footer-inner span:first-child': 'brand', '.footer-inner span:last-child': 'footer'
+  };
+
+  function renderStatic() {
+    document.documentElement.lang = locale;
+    document.title = t('title');
+    document.querySelector('meta[name="description"]').content = t('description');
+    Object.keys(staticText).forEach(function (selector) { document.querySelector(selector).textContent = t(staticText[selector]); });
+    document.querySelector('.hero .button').appendChild(element('span', '', '↗')).setAttribute('aria-hidden', 'true');
+    document.querySelector('.brand').setAttribute('aria-label', t('brandHome'));
+    document.querySelector('.site-header nav').setAttribute('aria-label', t('nav'));
+    document.querySelector('.book-scene').setAttribute('aria-label', t('sceneLabel'));
+    search.placeholder = t('searchPlaceholder');
+    document.querySelectorAll('[data-locale]').forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.locale === locale)); });
+    locationFilter.querySelectorAll('option:not([value="all"])').forEach(function (option) { option.textContent = t('locationOption', { name: placeName(locationById[option.value]) }); });
+  }
 
   locations.forEach(function (place) {
     var option = document.createElement('option');
     option.value = place.id;
-    option.textContent = place.name + ' (fictional)';
+    option.textContent = t('locationOption', { name: placeName(place) });
     locationFilter.appendChild(option);
   });
 
@@ -32,9 +72,10 @@
     return node;
   }
 
-  function announce(message) {
-    feedback.textContent = message;
-    var notice = store.getNotice();
+  function announce(result, extra) {
+    lastFeedback = result && typeof result === 'object' ? { result: result, extra: extra } : null;
+    feedback.textContent = lastFeedback ? localizedResult(result, extra) : (result || '');
+    var notice = store.getNoticeCode() ? t(store.getNoticeCode()) : store.getNotice();
     var storageNotice = document.getElementById('storage-notice');
     storageNotice.textContent = notice;
     storageNotice.hidden = !notice;
@@ -45,24 +86,24 @@
     var article = element('article', 'book-card');
     var cover = element('div', 'book-cover cover-' + (Number(book.id.slice(1)) % 4));
     cover.setAttribute('aria-hidden', 'true');
-    cover.appendChild(element('span', 'cover-small', 'BOOK WAREHOUSE · SAMPLE'));
-    cover.appendChild(element('span', 'cover-title', book.title));
+    cover.appendChild(element('span', 'cover-small', t('sampleCover')));
+    cover.appendChild(element('span', 'cover-title', bookText(book, 'title')));
     article.appendChild(cover);
     var body = element('div', 'book-body');
-    body.appendChild(element('p', 'book-category', book.category + ' · ' + book.language));
-    body.appendChild(element('h3', '', book.title));
-    body.appendChild(element('p', 'book-author', 'by ' + book.author));
-    body.appendChild(element('p', 'book-location', locationById[book.locationId].name + ' · fictional location'));
+    body.appendChild(element('p', 'book-category', t('categoryLine', { category: t('category' + book.category), language: t('language' + book.language) })));
+    body.appendChild(element('h3', '', bookText(book, 'title')));
+    body.appendChild(element('p', 'book-author', t('byAuthor', { author: bookText(book, 'author') })));
+    body.appendChild(element('p', 'book-location', t('sampleLocation', { name: placeName(locationById[book.locationId]) })));
     var foot = element('div', 'book-foot');
-    foot.appendChild(element('span', available ? 'availability available' : 'availability unavailable', available ? 'Available' : 'In demo journey'));
-    var button = element('button', 'request-button', available ? 'Request copy' : 'Copy unavailable');
+    foot.appendChild(element('span', available ? 'availability available' : 'availability unavailable', t(available ? 'available' : 'inJourney')));
+    var button = element('button', 'request-button', t(available ? 'requestCopy' : 'copyUnavailable'));
     button.type = 'button';
     button.disabled = !available;
-    button.setAttribute('aria-label', available ? 'Create demo request for ' + book.title : book.title + ' is unavailable');
+    button.setAttribute('aria-label', t(available ? 'requestAria' : 'unavailableAria', { title: bookText(book, 'title') }));
     button.addEventListener('click', function () {
       var result = store.createRequest(book.id);
       render();
-      announce(result.message);
+      announce(result);
       if (result.ok) {
         document.getElementById('journey').scrollIntoView({ behavior: 'smooth' });
         var firstAction = requestList.querySelector('button');
@@ -79,7 +120,7 @@
     var filtered = store.findBooks(search.value, locationFilter.value, availabilityFilter.value);
     list.replaceChildren();
     filtered.forEach(function (book) { list.appendChild(bookCard(book)); });
-    document.getElementById('result-count').textContent = filtered.length + ' of ' + books.length + ' sample copies';
+    document.getElementById('result-count').textContent = t('resultCount', { shown: filtered.length, total: books.length });
     document.getElementById('empty-results').hidden = filtered.length !== 0;
   }
 
@@ -87,32 +128,32 @@
     var book = byId[request.bookId];
     var article = element('article', 'journey-card');
     var summary = element('div', 'journey-summary');
-    summary.appendChild(element('p', 'book-category', 'DEMO REQUEST #' + request.id));
-    summary.appendChild(element('h3', '', book.title));
-    summary.appendChild(element('p', '', locationById[book.locationId].name + ' · fictional location'));
+    summary.appendChild(element('p', 'book-category', t('demoRequest', { id: request.id })));
+    summary.appendChild(element('h3', '', bookText(book, 'title')));
+    summary.appendChild(element('p', '', t('sampleLocation', { name: placeName(locationById[book.locationId]) })));
     article.appendChild(summary);
     var progress = element('ol', 'progress-list');
     stages.forEach(function (stage, index) {
-      var item = element('li', index <= stages.indexOf(request.stage) ? 'complete' : '', stageLabels[stage]);
+      var item = element('li', index <= stages.indexOf(request.stage) ? 'complete' : '', stageLabel(stage));
       progress.appendChild(item);
     });
     article.appendChild(progress);
     var actions = element('div', 'journey-actions');
-    actions.appendChild(element('span', 'stage-pill', stageLabels[request.stage]));
+    actions.appendChild(element('span', 'stage-pill', stageLabel(request.stage)));
     if (request.stage !== 'returned') {
-      var button = element('button', 'button button-dark', nextLabels[request.stage]);
+      var button = element('button', 'button button-dark', nextLabel(request.stage));
       button.type = 'button';
-      button.setAttribute('aria-label', 'Operator simulation: ' + nextLabels[request.stage].toLowerCase() + ' for ' + book.title);
+      button.setAttribute('aria-label', t('operatorAria', { action: nextLabel(request.stage), title: bookText(book, 'title') }));
       button.addEventListener('click', function () {
         var result = store.advanceRequest(request.id, stages[stages.indexOf(request.stage) + 1]);
         render();
-        announce(result.message + (result.ok && request.stage === 'borrowed' ? ' The copy is available again.' : ''));
+        announce(result, result.ok && request.stage === 'borrowed' ? 'returnedFeedback' : null);
         var replacement = requestList.querySelector('[data-request-id="' + request.id + '"] button');
         if (replacement) replacement.focus();
       });
       actions.appendChild(button);
     } else {
-      actions.appendChild(element('span', 'finished-note', 'Copy available again'));
+      actions.appendChild(element('span', 'finished-note', t('returnedNote')));
     }
     article.appendChild(actions);
     article.dataset.requestId = request.id;
@@ -126,7 +167,7 @@
     document.getElementById('empty-journey').hidden = requests.length > 0;
   }
 
-  function render() { renderBooks(); renderRequests(); }
+  function render() { renderStatic(); renderBooks(); renderRequests(); }
   function clearFilters() {
     search.value = '';
     locationFilter.value = 'all';
@@ -139,13 +180,25 @@
   search.addEventListener('input', renderBooks);
   locationFilter.addEventListener('change', renderBooks);
   availabilityFilter.addEventListener('change', renderBooks);
+  document.querySelectorAll('[data-locale]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      locale = button.dataset.locale;
+      try { if (storage) storage.setItem(localeKey, locale); } catch (error) { /* The selection still works for this page. */ }
+      render();
+      announce(lastFeedback ? lastFeedback.result : null, lastFeedback && lastFeedback.extra);
+    });
+  });
   document.getElementById('clear-filters').addEventListener('click', clearFilters);
   document.getElementById('empty-clear').addEventListener('click', clearFilters);
-  document.getElementById('reset-demo').addEventListener('click', function () {
+  var resetButton = document.getElementById('reset-demo');
+  resetButton.addEventListener('click', function () {
+    var confirmed = window.confirm(t('resetConfirm'));
+    resetButton.focus();
+    if (!confirmed) return;
     var result = store.reset();
     render();
-    announce(result.message);
+    announce(result);
   });
   render();
-  announce(store.getNotice());
+  announce(null);
 }());
