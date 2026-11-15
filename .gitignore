@@ -1,0 +1,28 @@
+# Local founding reference; publishing rights have not been confirmed.
+/Book Warehouse Plan.pdf
+
+# Generated review output and browser profiles.
+/tmp/
+/node_modules/
+/dist/
+/build/
+/coverage/
+/.venv/
+/venv/
+/__pycache__/
+*.py[cod]
+
+# Local configuration, credentials, and editor state.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
+firebase-adminsdk*.json
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173b35">
+  <meta name="description" content="Book Warehouse is a concept for connecting readers, books, and local knowledge spaces. Explore a fictional local demonstration.">
+  <title>Book Warehouse | A connected book network</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="sample-data.js"></script>
+  <script defer src="demo-store.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#home" aria-label="Book Warehouse home"><span class="brand-mark" aria-hidden="true">B<span>W</span></span><span>Book Warehouse</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#catalogue">Catalogue</a>
+        <a href="#journey">Demo journey</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="home" aria-labelledby="hero-title">
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">A connected book &amp; knowledge network</p>
+          <h1 id="hero-title">Book Warehouse</h1>
+          <p class="hero-lede">A way to help readers discover books and reach the local spaces that hold them.</p>
+          <p class="hero-detail">This first demonstration follows a book from discovery to return. The founder maintains the software; participating operators would handle collection, lending, and physical care.</p>
+          <a class="button button-light" href="#catalogue">Explore the demo <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="book-scene" aria-label="Illustration of a fictional shelf of books" role="img">
+          <div class="scene-note">A shelf of possibilities</div>
+          <div class="shelf shelf-one"><span class="spine spine-red"></span><span class="spine spine-tall"></span><span class="spine spine-blue"></span><span class="spine spine-cream"></span><span class="spine spine-green"></span><span class="spine spine-slim"></span></div>
+          <div class="shelf shelf-two"><span class="spine spine-cream"></span><span class="spine spine-blue"></span><span class="spine spine-red"></span><span class="spine spine-slim"></span><span class="spine spine-tall"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="intro-band" id="how-it-works" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-heading"><p class="eyebrow">A simple starting point</p><h2 id="how-title">Books move through people and places.</h2></div>
+        <div class="steps">
+          <div><span class="step-number">01</span><h3>Find a book</h3><p>Explore a shared catalogue with clear copy locations and availability.</p></div>
+          <div><span class="step-number">02</span><h3>Request a copy</h3><p>A reader starts a request for a specific available copy.</p></div>
+          <div><span class="step-number">03</span><h3>Follow its journey</h3><p>An operator confirms collection, lending, and return in the record.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="benefits-band" aria-labelledby="benefits-title">
+      <div class="wrap benefits-grid">
+        <div><p class="eyebrow">For readers</p><h2 id="benefits-title">A clearer path to the next book.</h2><p>See what is nearby, find a subject or author, and understand where a requested copy stands.</p></div>
+        <div><p class="eyebrow">For library partners</p><h2>A shared view of local collections.</h2><p>Participating operators could make books easier to discover while retaining responsibility for physical services and status updates.</p></div>
+      </div>
+    </section>
+
+    <section class="catalogue-section" id="catalogue" aria-labelledby="catalogue-title">
+      <div class="wrap">
+        <div class="section-top">
+          <div><p class="eyebrow">Try the local demonstration</p><h2 id="catalogue-title">Explore the catalogue</h2><p>All titles, authors, locations, and copies below are fictional sample data.</p></div>
+          <div class="demo-note"><strong>Local demo only</strong><span>No real reservation or message is sent. Your changes stay in this browser when storage is available.</span></div>
+        </div>
+        <form id="filters" class="filters" role="search">
+          <div class="field search-field"><label for="search">Search title, author, or topic</label><input id="search" name="search" type="search" placeholder="Try water, fiction, or an author" autocomplete="off"></div>
+          <div class="field"><label for="location">Location</label><select id="location" name="location"><option value="all">All locations</option></select></div>
+          <div class="field"><label for="availability">Availability</label><select id="availability" name="availability"><option value="all">All copies</option><option value="available">Available</option><option value="unavailable">In a demo journey</option></select></div>
+        </form>
+        <div class="results-bar"><p id="result-count" aria-live="polite"></p><button class="text-button" id="clear-filters" type="button">Clear filters</button></div>
+        <div id="book-list" class="book-grid"></div>
+        <div id="empty-results" class="empty-state" hidden><h3>No matching sample books</h3><p>Try another title, author, or topic, or clear the filters.</p><button class="button button-dark" id="empty-clear" type="button">Clear filters</button></div>
+      </div>
+    </section>
+
+    <section class="journey-section" id="journey" aria-labelledby="journey-title">
+      <div class="wrap">
+        <div class="section-top"><div><p class="eyebrow">Request journey</p><h2 id="journey-title">From request to return</h2><p>Choose an available sample copy above. The controls below simulate actions a participating operator would take.</p></div><button type="button" id="reset-demo" class="button button-outline">Reset demo</button></div>
+        <p id="storage-notice" class="storage-notice" role="status" hidden></p>
+        <p id="action-feedback" class="action-feedback" role="status" aria-live="polite"></p>
+        <div id="request-list" class="request-list"></div>
+        <div id="empty-journey" class="empty-journey"><span class="empty-icon" aria-hidden="true">↗</span><h3>No demo requests yet</h3><p>Start with an available book in the catalogue to see its journey here.</p><a href="#catalogue" class="text-link">Browse sample books</a></div>
+      </div>
+    </section>
+
+    <section class="vision-band" aria-labelledby="vision-title"><div class="wrap vision-grid"><div><p class="eyebrow">The wider vision</p><h2 id="vision-title">More than circulation.</h2></div><p>Book Warehouse also imagines connections between translation, publishing, and discovery through questions and ideas. Those capabilities are future work, not services offered by this demonstration.</p></div></section>
+  </main>
+  <footer class="site-footer"><div class="wrap footer-inner"><span>Book Warehouse</span><span>Fictional local demonstration · No real requests</span></div></footer>
+  <noscript><p class="noscript">JavaScript is required to use the sample catalogue and request journey.</p></noscript>
+</body>
+</html>
