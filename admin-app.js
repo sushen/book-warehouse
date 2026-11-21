@@ -2,6 +2,7 @@ import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from
 import { createAdminStore } from './admin-store.js';
 import { initDigitalAdmin } from './digital-admin.js';
 import { emulatorLogin } from './emulator-login.js';
+import { reviewRows } from './admin-review.js';
 
 const $ = id => document.getElementById(id);
 const words = {
@@ -79,6 +80,28 @@ let store, catalogue, cursor, rows = [], busy = false, authorized = false;
 let inventoryOperation = null;
 let summary = null;
 let attention = [], handoffs = {}, stopAttention = () => {}, authEpoch = 0;
+let selectedRequest = null, selectedId = '', stopSelected = () => {}, pageSequence = 0;
+let selectionNotice = '', actionNotice = '';
+const reviewDrafts = new Map();
+function focusSelected() {
+  const card = [...$('admin-requests').children].find(item => item.dataset.requestId === selectedId);
+  if (card) { card.focus({ preventScroll: true }); card.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block:'start' }); }
+}
+function chooseRequest(id, scroll = true) {
+  stopSelected(); selectedId = id; selectedRequest = null; actionNotice = ''; selectionNotice = 'loading';
+  selectPanel('approval-queue');
+  const url = new URL(location.href); url.hash = 'approval-queue'; url.searchParams.set('request',id); history.replaceState(null,'',url);
+  renderRequests(); const epoch = authEpoch;
+  stopSelected = store.watchRequest(id, request => {
+    if (epoch !== authEpoch || id !== selectedId) return;
+    selectedRequest = request; selectionNotice = request ? '' : 'noRequests'; renderRequests();
+    if (scroll) { focusSelected(); scroll = false; }
+  }, () => { selectionNotice = 'loadError'; renderRequests(); });
+}
+function clearSelection() {
+  stopSelected(); selectedId = ''; selectedRequest = null; selectionNotice = ''; actionNotice = '';
+  const url = new URL(location.href); url.searchParams.delete('request'); history.replaceState(null,'',url); renderRequests();
+}
 const noticeBox = document.createElement('aside'); noticeBox.id = 'admin-notifications'; noticeBox.setAttribute('aria-live','polite');
 document.querySelector('.admin-workspace').prepend(noticeBox);
 function notifications() {
@@ -88,13 +111,29 @@ function notifications() {
   for (const item of attention) {
     const kind = item.state === 'requested' ? 'requested' : item.state === 'ready' ? 'pickupNotice' : 'returnNotice';
     const title = local(catalogue?.works[catalogue?.editions[catalogue?.copies[item.copyId]?.editionId]?.workId]?.title) || item.copyId;
-    const link = node('button', `${item.readerName || text('unnamed')} · ${title} · ${text(kind)}`, 'button button-outline');
-    link.onclick = () => { $('admin-state').value = item.state; $('admin-library').value = 'all'; selectPanel('approval-queue'); loadMore(true).catch(() => feedback('error')); };
+    const link = node('button', '', 'admin-inbox-item'); link.type = 'button';
+    link.append(node('span', text(kind), 'admin-inbox-kind'), node('strong', title), node('span', item.readerName || text('unnamed')),
+      node('span', locale === 'en' ? 'Review request →' : 'অনুরোধ দেখুন →', 'admin-inbox-action'));
+    link.disabled = busy; link.onclick = () => chooseRequest(item.id);
     noticeBox.append(link);
   }
 }
 Object.assign(words.en, { pickupNotice:'Reader ready to collect', returnNotice:'Reader reports book returned', checkout:'Confirm book handed to reader', return:'Confirm returned book received' });
 Object.assign(words.bn, { pickupNotice:'পাঠক সংগ্রহের জন্য প্রস্তুত', returnNotice:'পাঠক বই ফেরতের কথা জানিয়েছেন', checkout:'পাঠককে বই দেওয়া নিশ্চিত করুন', return:'ফেরত বই হাতে পাওয়া নিশ্চিত করুন' });
+Object.assign(words.en, {
+  reviewing:'Selected request', closeReview:'Back to queue', approveHint:'Approve this reservation so the reader can arrange collection.',
+  readyHint:'The reader can collect this book. Confirm handoff only after giving it to the reader.',
+  returnHint:'Confirm return only after the library has received the book.', completeHint:'This request is complete.',
+  rejectOptions:'Reject this request…', reasonNeeded:'Enter a reason of at least 3 characters.', approvedHere:'Approved. The reader now sees Ready for collection.',
+  changedHere:'Saved. The reader’s journey has been updated.', failedHere:'Could not save. Your request and entered reason are preserved; please retry.'
+});
+Object.assign(words.bn, {
+  reviewing:'নির্বাচিত অনুরোধ', closeReview:'তালিকায় ফিরে যান', approveHint:'অনুমোদন করলে পাঠক বই সংগ্রহের ব্যবস্থা করতে পারবেন।',
+  readyHint:'বইটি সংগ্রহ করা যাবে। পাঠককে হাতে দেওয়ার পরেই নিশ্চিত করুন।', returnHint:'পাঠাগারে বইটি হাতে পাওয়ার পরেই ফেরত নিশ্চিত করুন।',
+  completeHint:'এই অনুরোধের কাজ শেষ হয়েছে।', rejectOptions:'এই অনুরোধ প্রত্যাখ্যান…', reasonNeeded:'অন্তত ৩ অক্ষরের কারণ লিখুন।',
+  approvedHere:'অনুমোদিত। পাঠক এখন সংগ্রহের জন্য প্রস্তুত অবস্থা দেখছেন।', changedHere:'সংরক্ষিত। পাঠকের যাত্রা হালনাগাদ হয়েছে।',
+  failedHere:'সংরক্ষণ হয়নি। অনুরোধ ও লেখা কারণ সংরক্ষিত আছে; আবার চেষ্টা করুন।'
+});
 const panels = ['approval-queue', 'inventory', 'add-books', 'add-library', 'digital-books'];
 function selectPanel(id) {
   const active = panels.includes(id) ? id : 'approval-queue';
@@ -136,25 +175,44 @@ function libraries() {
 }
 async function change(request, state, reason) {
   if (busy) return;
-  busy = true; renderRequests();
+  if (selectedId !== request.id) chooseRequest(request.id, false);
+  if (state === 'cancelled' && reason.trim().length < 3) { actionNotice = 'reasonNeeded'; renderRequests(); return; }
+  busy = true; actionNotice = ''; renderRequests(); notifications();
   try {
     await store.transition(request.id, state, reason);
     await reload();
     feedback(state === 'ready' ? 'approved' : state === 'cancelled' ? 'rejected' : 'updated');
-  } catch { feedback('error'); }
-  finally { busy = false; renderRequests(); }
+    actionNotice = state === 'ready' ? 'approvedHere' : 'changedHere'; reviewDrafts.delete(request.id);
+  } catch { actionNotice = 'failedHere'; feedback('error'); }
+  finally { busy = false; renderRequests(); notifications(); focusSelected(); }
 }
 function renderRequests() {
+  const active = document.activeElement;
+  const editing = active?.dataset?.requestReason ? { id:active.dataset.requestReason, start:active.selectionStart, end:active.selectionEnd } : null;
   $('admin-requests').replaceChildren();
-  if (!rows.length) $('admin-requests').append(node('p', text('noRequests'), 'admin-empty'));
-  for (const request of rows) {
+  if (selectedId) {
+    const bar = node('div', '', 'admin-review-heading'); bar.append(node('strong', text('reviewing')));
+    const close = node('button',text('closeReview'),'button button-outline'); close.type='button'; close.disabled=busy; close.onclick=clearSelection; bar.append(close);
+    $('admin-requests').append(bar);
+    if (selectionNotice) { const note=node('p',text(selectionNotice));note.setAttribute('role','status');$('admin-requests').append(note); }
+  }
+  const visible = reviewRows(rows, selectedRequest);
+  if (!visible.length && !selectedId) $('admin-requests').append(node('p', text('noRequests'), 'admin-empty'));
+  for (const request of visible) {
     const copy = catalogue.copies[request.copyId];
     const edition = catalogue.editions[copy?.editionId];
     const work = catalogue.works[edition?.workId];
-    const card = node('article', '', 'journey-card');
+    const card = node('article', '', 'journey-card admin-review-card' + (request.id === selectedId ? ' selected' : ''));
+    card.dataset.requestId = request.id; card.tabIndex=-1;
     const head = node('div', '', 'admin-card-head');
     head.append(node('h3', local(work?.title) || request.copyId),
       node('span', text(request.state), 'stage-pill stage-' + request.state));
+    if (request.id !== selectedId) {
+      const review = node('button', locale === 'en' ? 'Review request' : 'অনুরোধ দেখুন', 'button button-outline');
+      review.type = 'button'; review.disabled = busy;
+      review.setAttribute('aria-label', (locale === 'en' ? 'Review request: ' : 'অনুরোধ দেখুন: ') + (local(work?.title) || request.copyId) + ' — ' + (request.readerName || text('unnamed')));
+      review.onclick = () => chooseRequest(request.id); head.append(review);
+    }
     const details = node('dl', '', 'admin-card-meta');
     for (const [label, value] of [
       ['reader', request.readerName || text('unnamed')],
@@ -164,26 +222,37 @@ function renderRequests() {
       pair.append(node('dt', text(label)), node('dd', value)); details.append(pair);
     }
     card.append(head, details);
+    card.append(node('p', text(request.state === 'requested' ? 'approveHint' : request.state === 'ready' ? 'readyHint' : request.state === 'borrowed' ? 'returnHint' : 'completeHint'), 'admin-next-step'));
+    if (request.id === selectedId && actionNotice) { const notice=node('p',text(actionNotice),'admin-inline-feedback');notice.setAttribute('role','status');card.append(notice); }
     if (request.createdAt) card.append(node('p', new Intl.DateTimeFormat(locale === 'bn' ? 'bn-BD' : 'en-GB',
       { dateStyle: 'medium', timeStyle: 'short' }).format(request.createdAt.toDate()), 'admin-date'));
     if (request.decisionReason) card.append(node('p', request.decisionReason));
     if (request.state === 'ready' && handoffs[request.id]?.pickupRequestedAt) card.append(node('p', text('pickupNotice'), 'stage-pill'));
     if (request.state === 'borrowed' && handoffs[request.id]?.returnRequestedAt) card.append(node('p', text('returnNotice'), 'stage-pill'));
     const actions = node('div', '', 'admin-request-actions');
-    const button = (label, state, reason) => {
+    const button = (label, state, reason, target = actions) => {
       const item = node('button', text(label), label === 'reject' ? 'button button-reject' : 'button button-dark');
       item.disabled = busy; item.type = 'button'; item.addEventListener('click', () => change(request, state, reason?.value || ''));
-      actions.append(item);
+      target.append(item);
     };
     if (request.state === 'requested') {
       button('approve', 'ready');
-      const label = node('label', text('reason'), 'admin-rejection'); const reason = document.createElement('input');
-      reason.className = 'admin-reason'; reason.maxLength = 500; label.append(reason); card.append(label);
-      button('reject', 'cancelled', reason);
+      const draft = reviewDrafts.get(request.id) || { reason:'', open:false }; reviewDrafts.set(request.id,draft);
+      const disclosure=node('details','','admin-rejection'); disclosure.open=draft.open;
+      disclosure.addEventListener('toggle',()=>{draft.open=disclosure.open;});
+      disclosure.append(node('summary',text('rejectOptions')));
+      const label=node('label',text('reason')); const reason=document.createElement('input');
+      reason.className='admin-reason';reason.maxLength=500;reason.value=draft.reason;reason.dataset.requestReason=request.id;
+      reason.addEventListener('input',()=>{draft.reason=reason.value;});label.append(reason);disclosure.append(label);
+      button('reject','cancelled',reason,disclosure);card.append(disclosure);
     }
     if (request.state === 'ready') button('checkout', 'borrowed');
     if (request.state === 'borrowed') button('return', 'returned');
     card.append(actions); $('admin-requests').append(card);
+  }
+  if (editing) {
+    const input=[...$('admin-requests').querySelectorAll('input[data-request-reason]')].find(el=>el.dataset.requestReason===editing.id);
+    if (input) {input.focus({preventScroll:true});input.setSelectionRange(editing.start,editing.end);}
   }
 }
 function inventory() {
@@ -225,7 +294,9 @@ function inventory() {
   if (!groups.size) target.append(node('p', text('empty')));
 }
 async function loadMore(reset = false) {
+  const sequence = ++pageSequence, epoch = authEpoch;
   const page = await store.requests($('admin-state').value, $('admin-library').value || 'all', reset ? null : cursor);
+  if (epoch !== authEpoch || sequence !== pageSequence) return;
   rows = reset ? page.records : [...rows, ...page.records]; cursor = page.cursor;
   $('admin-more').hidden = !page.more; renderRequests();
 }
@@ -263,6 +334,7 @@ try {
   $('admin-sign-out').addEventListener('click', () => signOut(store.auth));
   onAuthStateChanged(store.auth, async user => {
     const epoch = ++authEpoch; stopAttention(); attention = []; handoffs = {}; noticeBox.replaceChildren();
+    stopSelected(); selectedId='';selectedRequest=null;selectionNotice='';actionNotice='';reviewDrafts.clear();rows=[];
     authorized = false; $('admin-content').hidden = true;
     $('admin-sign-in').hidden = !!user; $('admin-sign-out').hidden = !user;
     $('admin-account').textContent = user?.displayName || '';
@@ -274,6 +346,8 @@ try {
       $('admin-content').hidden = false;
       await reload(); $('admin-feedback').textContent = '';
       if (epoch !== authEpoch) return;
+      const requestedId=new URL(location.href).searchParams.get('request');
+      if (requestedId && /^[A-Za-z0-9_-]{1,256}$/.test(requestedId)) chooseRequest(requestedId,false);
       stopAttention = store.watchAttention((items, signals) => {
         if (epoch !== authEpoch) return;
         attention = items; handoffs = signals; notifications();

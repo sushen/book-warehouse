@@ -19,6 +19,9 @@ function adminStore({ app, auth, config }) {
   return {
     app, config,
     auth,
+    watchRequest(id, callback, onError) {
+      return onSnapshot(doc(db, 'sparkRequests', id), snapshot => callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null), onError);
+    },
     async archiveWork(workId, archived) {
       const ref = doc(db, 'works', workId);
       await runTransaction(db, async tx => {
