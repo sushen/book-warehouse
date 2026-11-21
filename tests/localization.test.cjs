@@ -31,27 +31,43 @@ function storage() {
   };
 }
 
-function start(savedStorage, confirm = () => true) {
+function start(savedStorage, confirm = () => true, reducedMotion = false, location = null) {
   const ids = new Map();
   const selectors = new Map();
   const getId = id => { if (!ids.has(id)) ids.set(id, node()); return ids.get(id); };
   const getSelector = selector => { if (!selectors.has(selector)) selectors.set(selector, node()); return selectors.get(selector); };
   const bn = node('button'); bn.dataset.locale = 'bn';
   const en = node('button'); en.dataset.locale = 'en';
-  const location = getId('location');
-  location.querySelectorAll = () => location.children;
+  const locationFilter = getId('location');
+  locationFilter.querySelectorAll = () => locationFilter.children;
   getId('search').value = '';
   const document = {
     title: '', documentElement: { lang: '' },
     createElement: node, getElementById: getId, querySelector: getSelector,
     querySelectorAll: selector => selector === '[data-locale]' ? [bn, en] : []
   };
-  const window = { localStorage: savedStorage, confirm };
+  const window = {
+    location,
+    localStorage: savedStorage, confirm, scrollY: 0,
+    addEventListener(name, callback) { this.events ||= {}; this.events[name] = callback; },
+    matchMedia() { return { matches: reducedMotion }; },
+    scrollTo(options) { this.lastScroll = options; this.scrollY = options.top; this.events.scroll(); }
+  };
   const context = { window, document, console };
   vm.createContext(context);
   for (const file of scripts) vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
   return { window, document, getId, bn, en, storage: savedStorage };
 }
+
+test('website catalogue leaves borrowing to the authenticated homepage module', () => {
+  const saved = storage();
+  const location = { protocol: 'http:', hostname: '127.0.0.1', assign(target) { this.target = target; } };
+  const app = start(saved, () => true, false, location);
+  assert.equal(app.getId('book-list').children.length, 0);
+  assert.equal(location.target, undefined);
+  const store = app.window.BookWarehouseStore.create(app.window.BookWarehouseSample, saved);
+  assert.equal(store.listRequests().length, 0);
+});
 
 test('Bangla default, language switch, search, active request, filters, reset and reload', () => {
   const saved = storage();
@@ -117,4 +133,25 @@ test('translation keys fall back to English and store retains English messages',
   const store = app.window.BookWarehouseStore.create(app.window.BookWarehouseSample, storage());
   assert.equal(store.createRequest('b01').code, 'requestCreated');
   assert.equal(store.createRequest('b01').message, 'This copy already has an active demo request.');
+});
+
+test('back-to-top appears after scrolling, localizes, and restores keyboard focus', () => {
+  const app = start(storage());
+  const button = app.getId('back-to-top');
+  assert.equal(button.hidden, true);
+  assert.equal(button.attributes['aria-label'], 'উপরে ফিরে যান');
+  app.window.scrollY = 241;
+  app.window.events.scroll();
+  assert.equal(button.hidden, false);
+  app.en.events.click();
+  assert.equal(button.attributes['aria-label'], 'Back to top');
+  button.events.click();
+  assert.equal(app.window.lastScroll.behavior, 'smooth');
+  assert.equal(button.hidden, true);
+  assert.equal(app.document.querySelector('.brand').focused, true);
+  const reduced = start(storage(), () => true, true);
+  reduced.window.scrollY = 300;
+  reduced.window.events.scroll();
+  reduced.getId('back-to-top').events.click();
+  assert.equal(reduced.window.lastScroll.behavior, 'auto');
 });

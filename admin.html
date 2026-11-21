@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="bn">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Book Warehouse | Admin</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="shared.css">
+<link rel="stylesheet" href="admin.css"></head>
+<body>
+<header class="shared-header wrap"><a class="admin-brand" href="index.html"><span class="admin-brand-mark" aria-hidden="true">BW</span>Book Warehouse</a><div class="language-switch">
+<button type="button" data-locale="bn" lang="bn">বাংলা</button><button type="button" data-locale="en" lang="en">English</button></div></header>
+<main class="wrap shared-main">
+<div class="admin-heading"><div><p class="admin-eyebrow" data-text="workspace"></p><h1 data-text="title"></h1><p class="admin-description" data-text="description"></p></div><div class="admin-identity"><span class="admin-avatar" aria-hidden="true">BW</span><p id="admin-account"></p></div></div>
+<button id="admin-sign-in" class="button button-dark" data-text="signIn"></button>
+<button id="admin-sign-out" class="button button-outline" data-text="signOut" hidden></button>
+<p id="admin-feedback" role="status" aria-live="polite"></p>
+<div id="admin-content" hidden>
+<div class="admin-metrics">
+<a class="admin-metric" href="#approval-queue" data-status="requested"><span data-text="requested"></span><strong id="metric-pending">—</strong><span class="metric-hint" data-text="needsReview"></span></a>
+<a class="admin-metric" href="#approval-queue" data-status="ready"><span data-text="ready"></span><strong id="metric-ready">—</strong><span class="metric-hint" data-text="awaitingPickup"></span></a>
+<a class="admin-metric" href="#inventory"><span data-text="physicalCopies"></span><strong id="metric-copies">—</strong><span class="metric-hint" data-text="acrossCollection"></span></a>
+<a class="admin-metric" href="#add-library"><span data-text="libraries"></span><strong id="metric-libraries">—</strong><span class="metric-hint" data-text="holdingLocations"></span></a>
+</div>
+<div class="admin-layout">
+<nav class="admin-nav" aria-label="Dashboard"><p class="admin-nav-label" data-text="manage"></p><a href="#approval-queue" data-text="queue"></a><a href="#inventory" data-text="inventory"></a><a href="#add-books" data-text="addBooks"></a><a href="#add-library" data-text="addLibrary"></a><a href="#digital-books">ডিজিটাল বই</a><div class="admin-nav-footer"><span aria-hidden="true">BW</span><p data-text="navNote"></p></div></nav>
+<div class="admin-workspace">
+<section id="digital-books" hidden></section>
+<section id="approval-queue"><div class="admin-section-heading"><div><h2 data-text="queue"></h2><p data-text="queueNote"></p></div><button id="admin-refresh" class="button button-outline" data-text="refresh"></button></div>
+<div class="shared-filters"><label><span data-text="state"></span><select id="admin-state"><option value="requested" data-text="requested"></option><option value="all" data-text="all"></option><option value="ready" data-text="ready"></option><option value="borrowed" data-text="borrowed"></option><option value="returned" data-text="returned"></option><option value="cancelled" data-text="cancelled"></option></select></label>
+<label><span data-text="library"></span><select id="admin-library"></select></label>
+</div>
+<p class="admin-page-note" data-text="pageNote"></p><div id="admin-requests" class="request-list"></div>
+<button id="admin-more" class="button button-outline" data-text="more" hidden></button></section>
+<section id="add-books" hidden><div class="admin-section-heading"><div><h2 data-text="addBooks"></h2><p data-text="physicalNote"></p></div></div>
+<form id="book-form" class="admin-form">
+<label><span data-text="bookTitle"></span><input name="title" required maxlength="120"></label>
+<label><span data-text="bookTitleBn"></span><input name="titleBn" maxlength="120"></label>
+<label><span data-text="author"></span><input name="author" required maxlength="120"></label>
+<label><span data-text="authorBn"></span><input name="authorBn" maxlength="120"></label>
+<label><span data-text="library"></span><select name="library" id="book-library" required></select></label>
+<label><span data-text="quantity"></span><input name="quantity" type="number" value="1" min="1" max="20" required></label>
+<label><span data-text="language"></span><select name="language"><option value="bn">বাংলা</option><option value="en">English</option><option value="other" data-text="other"></option></select></label>
+<label>ISBN<input name="isbn" maxlength="32"></label>
+<label><span data-text="topics"></span><input name="topics" maxlength="500"></label>
+<button type="submit" class="button button-dark" data-text="saveBook"></button></form></section>
+<section id="add-library" hidden><div class="admin-section-heading"><div><h2 data-text="addLibrary"></h2><p data-text="libraryNote"></p></div></div>
+<form id="library-form" class="admin-form">
+<label><span data-text="libraryName"></span><input name="name" required maxlength="120"></label>
+<label><span data-text="libraryNameBn"></span><input name="nameBn" maxlength="120"></label>
+<label><span data-text="address"></span><input name="address" required maxlength="200"></label>
+<label><span data-text="contact"></span><input name="contact" maxlength="200"></label>
+<button type="submit" class="button button-dark" data-text="saveLibrary"></button></form></section>
+<section id="inventory" hidden><div class="admin-section-heading"><div><h2 data-text="inventory"></h2><p data-text="inventoryNote"></p></div><a class="button button-dark" href="#add-books" data-text="addBooks"></a></div><div id="admin-inventory" class="request-list"></div></section>
+</div></div></div></main><script type="module" src="admin-app.js"></script></body></html>
