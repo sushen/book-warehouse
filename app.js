@@ -14,6 +14,7 @@
   var list = document.getElementById('book-list');
   var requestList = document.getElementById('request-list');
   var feedback = document.getElementById('action-feedback');
+  var backToTop = document.getElementById('back-to-top');
   var stages = ['requested', 'ready', 'borrowed', 'returned'];
   var localeKey = 'book-warehouse-locale';
   var locale = 'bn';
@@ -25,7 +26,7 @@
 
   function t(key, values) { return window.BookWarehouseLocales.translate(locale, key, values); }
   function bookText(book, field) { return locale === 'bn' ? book[field + 'Bn'] || book[field] : book[field]; }
-  function placeName(place) { return locale === 'bn' ? place.nameBn || place.name : place.name; }
+  function placeName(place) { return place ? (locale === 'bn' ? place.nameBn || place.name : place.name) : ''; }
   function stageLabel(stage) { return t('stage' + stage[0].toUpperCase() + stage.slice(1)); }
   function nextLabel(stage) { return t('next' + stage[0].toUpperCase() + stage.slice(1)); }
   function localizedResult(result, extra) {
@@ -51,7 +52,11 @@
     Object.keys(staticText).forEach(function (selector) { document.querySelector(selector).textContent = t(staticText[selector]); });
     document.querySelector('.hero .button').appendChild(element('span', '', '↗')).setAttribute('aria-hidden', 'true');
     document.querySelector('.brand').setAttribute('aria-label', t('brandHome'));
+    backToTop.setAttribute('aria-label', t('backToTop'));
     document.querySelector('.site-header nav').setAttribute('aria-label', t('nav'));
+    var sharedLink = document.getElementById('shared-mode-link');
+    sharedLink.hidden = !(window.location && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname));
+    sharedLink.textContent = locale === 'bn' ? 'Spark এমুলেটর' : 'Spark emulator';
     document.querySelector('.book-scene').setAttribute('aria-label', t('sceneLabel'));
     search.placeholder = t('searchPlaceholder');
     document.querySelectorAll('[data-locale]').forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.locale === locale)); });
@@ -96,32 +101,41 @@
     body.appendChild(element('p', 'book-location', t('sampleLocation', { name: placeName(locationById[book.locationId]) })));
     var foot = element('div', 'book-foot');
     foot.appendChild(element('span', available ? 'availability available' : 'availability unavailable', t(available ? 'available' : 'inJourney')));
-    var button = element('button', 'request-button', t(available ? 'requestCopy' : 'copyUnavailable'));
-    button.type = 'button';
-    button.disabled = !available;
-    button.setAttribute('aria-label', t(available ? 'requestAria' : 'unavailableAria', { title: bookText(book, 'title') }));
-    button.addEventListener('click', function () {
+    if (available) {
+      var button = element('button', 'request-button', t('requestCopy'));
+      button.type = 'button';
+      button.setAttribute('aria-label', t('requestAria', { title: bookText(book, 'title') }));
+      button.addEventListener('click', function () {
+      if (window.location && /^https?:$/.test(window.location.protocol)) {
+        window.location.assign('spark.html');
+        return;
+      }
       var result = store.createRequest(book.id);
       render();
       announce(result);
       if (result.ok) {
         document.getElementById('journey').scrollIntoView({ behavior: 'smooth' });
-        var firstAction = requestList.querySelector('button');
-        if (firstAction) firstAction.focus({ preventScroll: true });
+        var heading = requestList.querySelector('.journey-summary h3');
+        if (heading) heading.focus({ preventScroll: true });
       }
-    });
-    foot.appendChild(button);
+      });
+      foot.appendChild(button);
+    } else {
+      foot.appendChild(element('span', 'unavailable-note', t('copyUnavailable')));
+    }
     body.appendChild(foot);
     article.appendChild(body);
     return article;
   }
 
   function renderBooks() {
+    if (window.location && /^https?:$/.test(window.location.protocol)) return;
     var filtered = store.findBooks(search.value, locationFilter.value, availabilityFilter.value);
     list.replaceChildren();
     filtered.forEach(function (book) { list.appendChild(bookCard(book)); });
     document.getElementById('result-count').textContent = t('resultCount', { shown: filtered.length, total: books.length });
     document.getElementById('empty-results').hidden = filtered.length !== 0;
+    document.getElementById('clear-filters').hidden = !search.value && locationFilter.value === 'all' && availabilityFilter.value === 'all';
   }
 
   function requestCard(request) {
@@ -129,8 +143,11 @@
     var article = element('article', 'journey-card');
     var summary = element('div', 'journey-summary');
     summary.appendChild(element('p', 'book-category', t('demoRequest', { id: request.id })));
-    summary.appendChild(element('h3', '', bookText(book, 'title')));
+    var heading = element('h3', '', bookText(book, 'title'));
+    heading.tabIndex = -1;
+    summary.appendChild(heading);
     summary.appendChild(element('p', '', t('sampleLocation', { name: placeName(locationById[book.locationId]) })));
+    summary.appendChild(element('p', 'request-next', t('requestNext' + request.stage[0].toUpperCase() + request.stage.slice(1))));
     article.appendChild(summary);
     var progress = element('ol', 'progress-list');
     stages.forEach(function (stage, index) {
@@ -139,7 +156,7 @@
     });
     article.appendChild(progress);
     var actions = element('div', 'journey-actions');
-    actions.appendChild(element('span', 'stage-pill', stageLabel(request.stage)));
+    actions.appendChild(element('span', 'stage-pill stage-' + request.stage, stageLabel(request.stage)));
     if (request.stage !== 'returned') {
       var button = element('button', 'button button-dark', nextLabel(request.stage));
       button.type = 'button';
@@ -148,7 +165,7 @@
         var result = store.advanceRequest(request.id, stages[stages.indexOf(request.stage) + 1]);
         render();
         announce(result, result.ok && request.stage === 'borrowed' ? 'returnedFeedback' : null);
-        var replacement = requestList.querySelector('[data-request-id="' + request.id + '"] button');
+        var replacement = requestList.querySelector('[data-request-id="' + request.id + '"] button') || requestList.querySelector('[data-request-id="' + request.id + '"] h3');
         if (replacement) replacement.focus();
       });
       actions.appendChild(button);
@@ -167,7 +184,11 @@
     document.getElementById('empty-journey').hidden = requests.length > 0;
   }
 
-  function render() { renderStatic(); renderBooks(); renderRequests(); }
+  function render() {
+    renderStatic();
+    renderBooks();
+    if (!(window.location && /^https?:$/.test(window.location.protocol))) renderRequests();
+  }
   function clearFilters() {
     search.value = '';
     locationFilter.value = 'all';
@@ -199,6 +220,15 @@
     render();
     announce(result);
   });
+  function updateBackToTop() {
+    backToTop.hidden = window.scrollY <= 240;
+  }
+  window.addEventListener('scroll', updateBackToTop, { passive: true });
+  backToTop.addEventListener('click', function () {
+    document.querySelector('.brand').focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  });
   render();
   announce(null);
+  updateBackToTop();
 }());
