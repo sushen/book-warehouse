@@ -19,6 +19,14 @@ function adminStore({ app, auth, config }) {
   return {
     app, config,
     auth,
+    async archiveWork(workId, archived) {
+      const ref = doc(db, 'works', workId);
+      await runTransaction(db, async tx => {
+        const work = await tx.get(ref);
+        if (!work.exists()) throw new Error('Book not found');
+        tx.update(ref, { archived, updatedAt: serverTimestamp() });
+      });
+    },
     watchAttention(callback, onError) {
       let requests = [], signals = {};
       const send = () => callback(requests.filter(r => r.state === 'requested' ||

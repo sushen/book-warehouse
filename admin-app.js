@@ -209,6 +209,17 @@ function inventory() {
       stat.append(node('strong', new Intl.NumberFormat(locale).format(value))); stock.append(stat);
     }
     card.append(stock);
+    const archive = node('button', locale === 'en' ? (work?.archived ? 'Restore to catalogue' : 'Remove from reader catalogue') :
+      (work?.archived ? 'তালিকায় ফিরিয়ে আনুন' : 'পাঠকের তালিকা থেকে সরান'), 'button button-outline');
+    archive.disabled = busy;
+    archive.onclick = async () => {
+      if (busy) return; busy = true; archive.disabled = true;
+      try { await store.archiveWork(edition.workId, !work.archived); await reload(); feedback('saved'); }
+      catch { feedback('error'); }
+      finally { busy = false; inventory(); }
+    };
+    if (work?.archived) card.append(node('p', locale === 'en' ? 'Hidden from reader catalogue; history preserved.' : 'পাঠকের তালিকায় নেই; ইতিহাস সংরক্ষিত।'));
+    card.append(archive);
     target.append(card);
   }
   if (!groups.size) target.append(node('p', text('empty')));
@@ -284,13 +295,13 @@ try {
       await store.addBook(input, inventoryOperation.id); inventoryOperation = null;
       event.target.reset(); await reload(); feedback('saved');
     } catch { feedback('error'); }
-    finally { busy = false; button.disabled = false; renderRequests(); }
+    finally { busy = false; button.disabled = false; renderRequests(); inventory(); }
   });
   $('library-form').addEventListener('submit', async event => {
     event.preventDefault(); if (busy) return;
     busy = true; const button = event.target.querySelector('button'); button.disabled = true;
     try { await store.addLibrary(formData(event.target)); event.target.reset(); await reload(); feedback('saved'); }
     catch { feedback('error'); }
-    finally { busy = false; button.disabled = false; renderRequests(); }
+    finally { busy = false; button.disabled = false; renderRequests(); inventory(); }
   });
 } catch { feedback('error'); }

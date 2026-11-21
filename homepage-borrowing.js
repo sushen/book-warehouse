@@ -81,7 +81,7 @@ if (/^https?:$/.test(location.protocol)) {
     const term = $('search').value.trim().normalize('NFC').toLocaleLowerCase();
     const copies = Object.values(catalogue.copies).filter(copy => {
       const work = workFor(copy);
-      return work && (filter.value === 'all' || copy.libraryId === filter.value)
+      return work && work.archived !== true && (filter.value === 'all' || copy.libraryId === filter.value)
         && ($('availability').value !== 'available' || copy.availability === 'available')
         && JSON.stringify([work.title, work.authorDisplay, work.topics]).normalize('NFC').toLocaleLowerCase().includes(term);
     });

@@ -204,7 +204,7 @@ function renderCatalogue() {
   const library = $('shared-library').value;
   const availableOnly = $('shared-availability').value === 'available';
   Object.values(catalogue.copies).filter(copy => {
-    const work = book(copy); if (!work) return false;
+    const work = book(copy); if (!work || work.archived === true) return false;
     const searchable = [...Object.values(work.title), ...Object.values(work.authorDisplay), ...Object.values(work.topics).flat()].join(' ').normalize('NFC').toLocaleLowerCase();
     return (!term || searchable.includes(term)) && (library === 'all' || copy.libraryId === library) && (!availableOnly || copy.availability === 'available');
   }).forEach(copy => {

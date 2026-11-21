@@ -107,6 +107,8 @@ service cloud.firestore {
     }
     match /works/{id} {
       allow get, list: if resource.data.visibility == 'public' || supervisor();
+      allow update: if supervisor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived','updatedAt']) &&
+        request.resource.data.archived is bool && request.resource.data.updatedAt == request.time;
       allow create: if catalogueRecord(request.resource.data, ['title','authorDisplay','topics','visibility','createdAt','updatedAt']) &&
         validName(request.resource.data.title.en) && validName(request.resource.data.title.bn) &&
         validName(request.resource.data.authorDisplay.en) && validName(request.resource.data.authorDisplay.bn) &&

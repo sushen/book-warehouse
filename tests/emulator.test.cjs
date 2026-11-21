@@ -279,6 +279,11 @@ test('super admin reviews requests with audit fields and registers real lending 
     visibility: 'public', availability: 'available', activeRequestId: null, version: 0,
     createdAt: clock(), updatedAt: clock() });
   await assertSucceeds(batch.commit());
+  await assertFails(reader.doc('works/new-work').update({ archived: true, updatedAt: clock() }));
+  await assertFails(supervisor.doc('works/new-work').update({ archived: true, title: { en:'changed' }, updatedAt: clock() }));
+  await assertSucceeds(supervisor.doc('works/new-work').update({ archived: true, updatedAt: clock() }));
+  assert.equal((await reader.doc('copies/new-copy').get()).data().availability, 'available');
+  await assertSucceeds(supervisor.doc('works/new-work').update({ archived: false, updatedAt: clock() }));
   await assertFails(supervisor.doc('copies/new-copy').update({ availability: 'held' }));
   await assertFails(supervisor.doc('copies/invalid-copy').set({ editionId: 'missing', libraryId: 'lib-a',
     visibility: 'public', availability: 'available', activeRequestId: null, version: 0,
