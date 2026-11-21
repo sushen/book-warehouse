@@ -1,6 +1,7 @@
 import { createSparkStore } from './spark-store.js';
 import { prepareBorrowing } from './borrowing-intent.js';
 import { catalogueCard } from './catalogue-card.js';
+import { groupHoldings } from './catalogue-holdings.js';
 import { mountReaderJourney } from './reader-journey.js';
 import { emulatorLogin } from './emulator-login.js';
 
@@ -82,18 +83,20 @@ if (/^https?:$/.test(location.protocol)) {
     const copies = Object.values(catalogue.copies).filter(copy => {
       const work = workFor(copy);
       return work && work.archived !== true && (filter.value === 'all' || copy.libraryId === filter.value)
-        && ($('availability').value !== 'available' || copy.availability === 'available')
         && JSON.stringify([work.title, work.authorDisplay, work.topics]).normalize('NFC').toLocaleLowerCase().includes(term);
     });
     list.replaceChildren();
-    for (const copy of copies) {
+    const holdings = groupHoldings(copies).filter(group => $('availability').value !== 'available' || group.availableCopies.length > 0);
+    for (const group of holdings) {
+      const copy = group.selectedCopy;
       const work = workFor(copy);
-      const available = copy.availability === 'available' && copy.activeRequestId === null;
+      const available = group.availableCopies.length > 0;
       const language = catalogue.editions[copy.editionId]?.languageCode;
       const { card, foot } = catalogueCard({ id: copy.editionId, title: local(work.title), author: local(work.authorDisplay),
         format: locale() === 'en' ? 'Physical book' : 'মুদ্রিত বই',
         language: language === 'bn' ? 'বাংলা' : language === 'en' ? 'English' : '',
-        location: local(catalogue.libraries[copy.libraryId]?.name), status: text(available ? 'available' : 'unavailable'), available });
+        location: local(catalogue.libraries[copy.libraryId]?.name),
+        status: available ? (locale() === 'en' ? `${group.availableCopies.length} available · ${group.copies.length} copies` : `${new Intl.NumberFormat('bn').format(group.availableCopies.length)}টি পাওয়া যাচ্ছে · মোট ${new Intl.NumberFormat('bn').format(group.copies.length)} কপি`) : text('unavailable'), available });
       if (available && store.borrowingEnabled) {
         const button = node('button', text('request'), 'request-button');
         button.type = 'button'; button.disabled = busy;
@@ -102,8 +105,8 @@ if (/^https?:$/.test(location.protocol)) {
       }
       list.append(card);
     }
-    $('result-count').textContent = new Intl.NumberFormat(locale()).format(copies.length);
-    $('empty-results').hidden = copies.length !== 0;
+    $('result-count').textContent = new Intl.NumberFormat(locale()).format(holdings.length) + (locale() === 'en' ? ' titles at libraries' : 'টি বই ও পাঠাগার');
+    $('empty-results').hidden = holdings.length !== 0;
     $('action-feedback').textContent = message ? text(message) : '';
   }
   async function request(copyId) {

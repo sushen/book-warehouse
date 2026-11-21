@@ -4,7 +4,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "build:pages": "node scripts/build-pages.cjs",
-    "test": "node --test tests/demo-store.test.cjs tests/localization.test.cjs tests/circulation.test.cjs tests/build-config.test.cjs tests/reader-session.test.cjs tests/borrowing-intent.test.cjs tests/drive-books.test.cjs tests/public-config.test.cjs",
+    "test": "node --test tests/demo-store.test.cjs tests/localization.test.cjs tests/circulation.test.cjs tests/build-config.test.cjs tests/reader-session.test.cjs tests/borrowing-intent.test.cjs tests/drive-books.test.cjs tests/public-config.test.cjs tests/catalogue-holdings.test.cjs",
     "emulators": "firebase emulators:start --project demo-book-warehouse",
     "seed": "node scripts/seed-emulator.cjs",
     "test:emulator": "firebase emulators:exec --project demo-book-warehouse --only firestore,auth,functions,storage \"node --test tests/emulator.test.cjs\""

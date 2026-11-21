@@ -1,3 +1,4 @@
+import { groupHoldings } from './catalogue-holdings.js';
 import { createSharedStore } from './shared-store.js';
 import { createSparkStore } from './spark-store.js';
 
@@ -203,18 +204,23 @@ function renderCatalogue() {
   const term = $('shared-search').value.trim().normalize('NFC').toLocaleLowerCase();
   const library = $('shared-library').value;
   const availableOnly = $('shared-availability').value === 'available';
-  Object.values(catalogue.copies).filter(copy => {
+  const filteredCopies = Object.values(catalogue.copies).filter(copy => {
     const work = book(copy); if (!work || work.archived === true) return false;
     const searchable = [...Object.values(work.title), ...Object.values(work.authorDisplay), ...Object.values(work.topics).flat()].join(' ').normalize('NFC').toLocaleLowerCase();
-    return (!term || searchable.includes(term)) && (library === 'all' || copy.libraryId === library) && (!availableOnly || copy.availability === 'available');
-  }).forEach(copy => {
+    return (!term || searchable.includes(term)) && (library === 'all' || copy.libraryId === library);
+  });
+  const holdings = groupHoldings(filteredCopies).filter(group => !availableOnly || group.availableCopies.length > 0);
+  holdings.forEach(group => {
+    const copy = group.selectedCopy;
     const work = book(copy);
     const article = node('article', '', 'book-card');
     const body = node('div', '', 'book-body');
     body.append(node('p', text('sample'), 'book-category'), node('h3', local(work.title)), node('p', local(work.authorDisplay), 'book-author'), node('p', local(catalogue.libraries[copy.libraryId]?.name), 'book-location'));
     const foot = node('div', '', 'book-foot');
-    foot.append(node('span', text(copy.availability === 'available' ? 'available' : 'unavailable'), 'availability ' + (copy.availability === 'available' ? 'available' : 'unavailable')));
-    if (copy.availability === 'available' && store?.borrowingEnabled && !allRequests) { const button = node('button', text('requestCopy'), 'button button-dark'); button.type = 'button'; button.addEventListener('click', () => selectCopy(copy.id)); foot.append(button); }
+    const available = group.availableCopies.length > 0;
+    const count = new Intl.NumberFormat(locale).format(group.availableCopies.length);
+    foot.append(node('span', available ? (locale === 'bn' ? `${count}টি পাওয়া যাচ্ছে` : `${count} available`) : text('unavailable'), 'availability ' + (available ? 'available' : 'unavailable')));
+    if (available && store?.borrowingEnabled && !allRequests) { const button = node('button', text('requestCopy'), 'button button-dark'); button.type = 'button'; button.addEventListener('click', () => selectCopy(copy.id)); foot.append(button); }
     body.append(foot); article.append(body); target.append(article);
   });
   if (!target.childElementCount) target.append(node('p', text('empty')));
