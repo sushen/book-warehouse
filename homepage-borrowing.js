@@ -4,6 +4,7 @@ import { catalogueCard } from './catalogue-card.js';
 import { groupHoldings } from './catalogue-holdings.js';
 import { mountReaderJourney } from './reader-journey.js';
 import { emulatorLogin } from './emulator-login.js';
+import { confirmBorrowing } from './borrow-confirmation.js';
 
 if (/^https?:$/.test(location.protocol)) {
   if (document.readyState === 'loading') {
@@ -18,7 +19,7 @@ if (/^https?:$/.test(location.protocol)) {
       journeyNote: 'View your saved requests and their progress through collection and return.',
       source: 'Connected to Book Warehouse Staging',
       available: 'Available', unavailable: 'Unavailable', request: 'Request a copy',
-      reserved: 'Your request is recorded in My requests.', cancelled: 'Request cancelled.',
+      reserved: 'Request saved. Follow its progress below.', cancelled: 'No new request was sent.',
       error: 'Could not complete the request. Please try again.', changed: 'This copy is no longer available.',
       profile: 'Enter your reader name', confirm: 'Request this copy?', reader: 'Reader',
       requests: 'My requests', all: 'All libraries',
@@ -31,7 +32,7 @@ if (/^https?:$/.test(location.protocol)) {
       journeyNote: 'সংরক্ষিত অনুরোধ এবং বই সংগ্রহ থেকে ফেরত দেওয়া পর্যন্ত অগ্রগতি দেখুন।',
       source: 'Book Warehouse Staging-এর সঙ্গে সংযুক্ত',
       available: 'পাওয়া যাচ্ছে', unavailable: 'পাওয়া যাচ্ছে না', request: 'কপি অনুরোধ করুন',
-      reserved: 'আমার অনুরোধ-এ আপনার অনুরোধ নথিভুক্ত হয়েছে।', cancelled: 'অনুরোধ বাতিল হয়েছে।',
+      reserved: 'অনুরোধ সংরক্ষিত। নিচে এর অগ্রগতি দেখুন।', cancelled: 'নতুন অনুরোধ পাঠানো হয়নি।',
       error: 'অনুরোধ সম্পন্ন হয়নি। আবার চেষ্টা করুন।', changed: 'এই কপিটি আর পাওয়া যাচ্ছে না।',
       profile: 'পাঠক হিসেবে আপনার নাম লিখুন', confirm: 'এই কপিটি অনুরোধ করবেন?', reader: 'পাঠক',
       requests: 'আমার অনুরোধ', all: 'সব পাঠাগার',
@@ -100,6 +101,7 @@ if (/^https?:$/.test(location.protocol)) {
       if (available && store.borrowingEnabled) {
         const button = node('button', text('request'), 'request-button');
         button.type = 'button'; button.disabled = busy;
+        button.dataset.copyId = copy.id;
         button.addEventListener('click', () => request(copy.id));
         foot.append(button);
       }
@@ -115,29 +117,33 @@ if (/^https?:$/.test(location.protocol)) {
     try {
       const preparation = prepareBorrowing(store, copyId);
       render();
-      let result = await preparation;
-      if (result.code === 'profileRequired') {
-        const name = window.prompt(text('profile'), store.user()?.displayName || '');
-        if (!name?.trim()) { message = 'cancelled'; return; }
-        await store.updateProfile(name.trim());
-        result = await prepareBorrowing(store, copyId);
-      }
-      if (result.code !== 'ready') { message = 'changed'; return; }
-      const title = local(workFor(result.copy)?.title) || copyId;
-      const library = local(catalogue.libraries[result.copy.libraryId]?.name);
-      if (!window.confirm([text('confirm'), title, library,
-        text('reader') + ' — ' + result.profile.displayName].join('\n'))) {
-        message = 'cancelled'; return;
-      }
-      const outcome = await store.execute('requestCopy', copyId);
+      const result = await preparation;
+      if (!['ready','profileRequired'].includes(result.code)) { message='changed';return; }
+      const selected = result.copy || catalogue.copies[copyId], ownerUid=store.user()?.uid;
+      const library=catalogue.libraries[selected.libraryId];
+      const outcome = await confirmBorrowing({ title:local(workFor(selected)?.title)||copyId,
+        library:local(library?.name)+(library?.approvedPickupLocation?' · '+local(library.approvedPickupLocation):''),
+        readerName:result.profile?.displayName||store.user()?.displayName||'',needsName:result.code==='profileRequired',
+        onConfirm:async name=>{
+          if(!ownerUid||store.user()?.uid!==ownerUid)throw new Error('error');
+          if(result.code==='profileRequired')await store.updateProfile(name);
+          const fresh=await store.getCopy(copyId);
+          if(!fresh||fresh.availability!=='available'||fresh.activeRequestId!==null)throw new Error('changed');
+          const saved=await store.execute('requestCopy',copyId);
+          if(!saved.ok)throw new Error(store.pending()?'pending':saved.code==='copyUnavailable'?'changed':'error');
+          return saved;
+        }});
+      if(!outcome){message='cancelled';return;}
       message = outcome.ok ? 'reserved' : store.pending() ? 'pending'
         : outcome.code === 'copyUnavailable' ? 'changed' : 'error';
       catalogue = await store.catalogue();
+      renderJourney.focusRequest?.(outcome.requestId);
     } catch (error) {
       message = ['auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(error.code)
         ? 'cancelled' : 'error';
     } finally {
       busy = false; render();
+      if(message!=='reserved') [...list.querySelectorAll('button[data-copy-id]')].find(el=>el.dataset.copyId===copyId)?.focus({preventScroll:true});
     }
   }
   list.textContent = text('loading');
