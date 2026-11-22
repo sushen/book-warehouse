@@ -1,0 +1,10 @@
+{
+  "referenceAsset": "USDT",
+  "referenceAmount": 8,
+  "bdtPerUsdtMinor": 13000,
+  "localPriceCredits": 1040,
+  "bdtPerCredit": 1,
+  "fixedByFounder": true,
+  "source": "Explicit founder instruction, 22 November 2026",
+  "note": "Fixed 1 USDT = 130 BDT = 130 BW Credits until founder explicitly changes it. Book price 8 USDT = 1040 BDT/credits. This is a configured rate, not a live market quote; payment receipt requires separate verification."
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@book-warehouse/protected-books",
+  "private": true,
+  "main": "index.cjs",
+  "type": "commonjs",
+  "engines": { "node": ">=20" }
+}
