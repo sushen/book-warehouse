@@ -3,8 +3,10 @@ import { createAdminStore } from './admin-store.js';
 import { initDigitalAdmin } from './digital-admin.js';
 import { emulatorLogin } from './emulator-login.js';
 import { reviewRows } from './admin-review.js';
+import { mountCreditTopupInbox } from './credit-topup-inbox.js';
 
 const $ = id => document.getElementById(id);
+let stopCreditTopupInbox = () => {};
 const words = {
   en: {
     title: 'Super Admin dashboard', signIn: 'Continue with Google', signOut: 'Sign out',
@@ -333,6 +335,7 @@ try {
   });
   $('admin-sign-out').addEventListener('click', () => signOut(store.auth));
   onAuthStateChanged(store.auth, async user => {
+    stopCreditTopupInbox();
     const epoch = ++authEpoch; stopAttention(); attention = []; handoffs = {}; noticeBox.replaceChildren();
     stopSelected(); selectedId='';selectedRequest=null;selectionNotice='';actionNotice='';reviewDrafts.clear();rows=[];
     authorized = false; $('admin-content').hidden = true;
@@ -344,6 +347,7 @@ try {
       if (epoch !== authEpoch) return;
       if (!authorized) return feedback('denied');
       $('admin-content').hidden = false;
+      stopCreditTopupInbox = mountCreditTopupInbox(store);
       await reload(); $('admin-feedback').textContent = '';
       if (epoch !== authEpoch) return;
       const requestedId=new URL(location.href).searchParams.get('request');

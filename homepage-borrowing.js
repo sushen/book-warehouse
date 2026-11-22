@@ -5,6 +5,8 @@ import { groupHoldings } from './catalogue-holdings.js';
 import { mountReaderJourney } from './reader-journey.js';
 import { emulatorLogin } from './emulator-login.js';
 import { confirmBorrowing } from './borrow-confirmation.js';
+import { mountProtectedCatalogue } from './protected-catalogue.js';
+import { isLocalRuntime } from './local-runtime.js';
 
 if (/^https?:$/.test(location.protocol)) {
   if (document.readyState === 'loading') {
@@ -48,6 +50,7 @@ if (/^https?:$/.test(location.protocol)) {
   let busy = false;
   let message = '';
   let renderJourney = () => {};
+  const patchPrototype = isLocalRuntime(location);
   const emulator = ['127.0.0.1','localhost'].includes(location.hostname) && new URLSearchParams(location.search).get('emulator') === '1';
   function node(tag, content, className) {
     const item = document.createElement(tag);
@@ -59,7 +62,9 @@ if (/^https?:$/.test(location.protocol)) {
   function render() {
     $('admin-dashboard-link').textContent = locale() === 'en' ? 'Admin dashboard' : 'অ্যাডমিন ড্যাশবোর্ড';
     $('catalogue-title').textContent = text('catalogue');
-    document.querySelector('.catalogue-section .section-top p:last-child').textContent = text('catalogueNote');
+    document.querySelector('.catalogue-section .section-top p:last-child').textContent = patchPrototype && emulator
+      ? (locale() === 'en' ? 'Choose an available copy to test borrowing with a local test account.' : 'স্থানীয় পরীক্ষার অ্যাকাউন্ট দিয়ে ধার নেওয়ার পরীক্ষা করতে পাওয়া যাচ্ছে এমন কপি বাছুন।')
+      : text('catalogueNote');
     $('journey-title').textContent = text('requests');
     document.querySelector('.journey-section .section-top p').textContent = text('journeyNote');
     document.querySelector('.footer-inner span:last-child').textContent = text('source');
@@ -68,8 +73,10 @@ if (/^https?:$/.test(location.protocol)) {
     document.querySelector('.hero-detail').textContent = locale() === 'en' ? 'Browse the catalogue, read digital books, and follow your library requests.' : 'বইয়ের তালিকা দেখুন, ডিজিটাল বই পড়ুন এবং পাঠাগারে অনুরোধের যাত্রা দেখুন।';
     const note = document.querySelector('.demo-note');
     note.hidden = !emulator;
-    if (emulator) note.textContent = locale() === 'en' ? 'Local emulator · Fictional test records only' : 'স্থানীয় এমুলেটর · শুধুই কাল্পনিক পরীক্ষার তথ্য';
-    document.querySelector('.footer-inner span:last-child').textContent = emulator ? (locale() === 'en' ? 'Local emulator · Fictional test data' : 'স্থানীয় এমুলেটর · কাল্পনিক পরীক্ষার তথ্য') : text('source');
+    if (emulator) note.textContent = patchPrototype
+      ? (locale() === 'en' ? 'Local test · Existing book inventory copied for testing. Requests here do not reserve real library copies.' : 'স্থানীয় পরীক্ষা · বিদ্যমান বইয়ের সংগ্রহের পরীক্ষার কপি। এখানকার অনুরোধ বাস্তব পাঠাগারের কপি সংরক্ষণ করে না।')
+      : (locale() === 'en' ? 'Local emulator · Fictional test records only' : 'স্থানীয় এমুলেটর · শুধুই কাল্পনিক পরীক্ষার তথ্য');
+    document.querySelector('.footer-inner span:last-child').textContent = emulator ? (locale() === 'en' ? 'Local test · Requests stay in this test environment' : 'স্থানীয় পরীক্ষা · অনুরোধ শুধু পরীক্ষার পরিবেশেই থাকে') : text('source');
     $('empty-journey').hidden = true;
     renderJourney();
     const filter = $('location');
@@ -77,6 +84,7 @@ if (/^https?:$/.test(location.protocol)) {
     filter.replaceChildren();
     const all = node('option', text('all')); all.value = 'all'; filter.append(all);
     for (const library of Object.values(catalogue.libraries)) {
+      if (patchPrototype && !Object.values(catalogue.copies).some(copy => copy.libraryId === library.id && workFor(copy) && workFor(copy).archived !== true)) continue;
       const option = node('option', local(library.name)); option.value = library.id; filter.append(option);
     }
     filter.value = catalogue.libraries[selected] ? selected : 'all';
@@ -150,6 +158,7 @@ if (/^https?:$/.test(location.protocol)) {
   try {
     store = await createSparkStore(emulator);
     if (emulator) emulatorLogin(store.auth);
+    if(patchPrototype)mountProtectedCatalogue(store);
     catalogue = await store.catalogue();
     renderJourney = mountReaderJourney(store, () => catalogue, async () => { catalogue = await store.catalogue(); render(); });
     for (const id of ['search', 'location', 'availability']) {

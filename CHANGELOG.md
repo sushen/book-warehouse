@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — review checkpoint, 22 November 2026
 
-No next-version changes recorded yet.
+- Add private PDF processing, encrypted originals, previews and server-authorized licenses.
+- Add Google-backed local credit wallets, atomic purchases, text-only top-up requests, manual receipt approval and sales reports.
+- Add focused reading with saved page, zoom and separate task navigation.
+- Enable the protected flow on both local addresses; retire public full-PDF links and publication controls in this source.
+- Protected API remains local, provider verification unconnected and unconfigured titles locked. See RELEASE-NOTES-0.1.1.md for deployment/migration limits.
 
 ## 0.1.0 — 2026-11-21
 

@@ -42,6 +42,7 @@ export default defineConfig({
         spark: resolve(import.meta.dirname, 'spark.html'),
         admin: resolve(import.meta.dirname, 'admin.html'),
         sparkEmulator: resolve(import.meta.dirname, 'spark-emulator.html')
+        ,protectedPrototype: resolve(import.meta.dirname, 'protected.html')
       }
     }
   }
