@@ -34,7 +34,8 @@ export default defineConfig({
       input: pagesBuild ? {
         demo: resolve(import.meta.dirname, 'index.html'),
         spark: resolve(import.meta.dirname, 'spark.html'),
-        admin: resolve(import.meta.dirname, 'admin.html')
+        admin: resolve(import.meta.dirname, 'admin.html'),
+        protectedReader: resolve(import.meta.dirname, 'protected.html')
       } : {
         demo: resolve(import.meta.dirname, 'index.html'),
         emulator: resolve(import.meta.dirname, 'shared.html'),

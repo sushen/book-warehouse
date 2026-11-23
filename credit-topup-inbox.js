@@ -1,11 +1,10 @@
-import { ProtectedBooksClient } from './protected-client.js';
+import { FirebaseBookAccess } from './firebase-book-access.js';
 import { isLocalRuntime } from './local-runtime.js';
 export function mountCreditTopupInbox(store) {
-  if (!isLocalRuntime(location)) return () => {};
   const box = document.createElement('p'), link = document.createElement('a');
   link.href = 'protected.html#protected-topup-review'; link.className = 'button button-outline'; box.append(link);
   document.getElementById('admin-content').prepend(box);
-  const client = new ProtectedBooksClient({ origin: 'http://127.0.0.1:8787', getUser: () => store.auth.currentUser });
+  const client = new FirebaseBookAccess({store:{...store,user:()=>store.auth.currentUser}});
   let active = true;
   async function refresh() {
     try {

@@ -1,8 +1,7 @@
 import { catalogueCard } from "./catalogue-card.js";
 import { taka, offerActions } from "./protected-offer.js";
-import { ProtectedBooksClient } from "./protected-client.js";
+import { FirebaseBookAccess } from "./firebase-book-access.js";
 import { createDigitalStore } from './digital-store.js';
-const apiOrigin = "http://127.0.0.1:8787";
 export function mountProtectedCatalogue(store) {
   const section = document.createElement("section");
   section.id = "digital-catalogue";
@@ -18,6 +17,9 @@ export function mountProtectedCatalogue(store) {
   const addCredits = document.createElement('a');
   addCredits.href = 'protected.html#credits'; addCredits.className = 'button button-outline';
   section.insertBefore(addCredits, list);
+  const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'button button-outline';
+  retry.textContent = 'Retry loading books'; retry.onclick = () => refresh().catch(() => {});
+  section.insertBefore(retry, list);
   document.getElementById("catalogue").after(section);
   let books = [],
     legacyBooks = [],
@@ -26,12 +28,10 @@ export function mountProtectedCatalogue(store) {
     generation = 0,
     message = "",
     loading = true,
+    serviceUnavailable = false,
     wallet = null;
   const operations = new Map();
-  const client = new ProtectedBooksClient({
-    origin: apiOrigin,
-    getUser: () => store.user(),
-  });
+  const client = new FirebaseBookAccess({ store });
   const en = () => document.documentElement.lang === "en";
   const text = (english, bangla) => (en() ? english : bangla);
   const element = (tag, value, className = "") => {
@@ -46,21 +46,10 @@ export function mountProtectedCatalogue(store) {
   async function refresh() {
     const current = ++generation,
       uid = store.user()?.uid;
-    const records = await api("/books"),
-      next = {};
+    const records = await api('/books');
     if (current !== generation || store.user()?.uid !== uid) return;
-    books = records;
-    loading = false;
-    render();
-    if (store.app) {
-      try {
-        const legacy = await createDigitalStore(store.app, store.auth).list();
-        if (current !== generation || store.user()?.uid !== uid) return;
-        const protectedHashes = new Set(records.map(book => book.sha256).filter(Boolean));
-        legacyBooks = legacy.filter(book => !book.sha256 || !protectedHashes.has(book.sha256));
-        render();
-      } catch { /* A legacy metadata failure never reveals files or hides protected books. */ }
-    }
+    loading = false; serviceUnavailable = false; books = records; legacyBooks = [];
+    const next = {}; message = ''; render();
     let nextWallet = null;
     if (uid) {
       try { nextWallet = await api("/me"); }
@@ -134,7 +123,7 @@ export function mountProtectedCatalogue(store) {
     feedback.textContent = message;
     addCredits.textContent = text('Buy / add BW Credits', 'BW ক্রেডিট কিনুন / যোগ করুন');
     account.textContent = store.user()
-      ? `${store.user().displayName || store.user().email || text("Reader", "পাঠক")} · ${wallet ? `${wallet.balance} BW Credits (${taka(wallet.balance)})` : text("Checking local balance…", "স্থানীয় ব্যালেন্স দেখা হচ্ছে…")}`
+      ? `${store.user().displayName || store.user().email || text("Reader", "পাঠক")} · ${wallet ? `${wallet.balance} BW Credits (${taka(wallet.balance)})` : text(serviceUnavailable ? "Balance unavailable" : "Checking local balance…", serviceUnavailable ? "ব্যালেন্স দেখা যাচ্ছে না" : "স্থানীয় ব্যালেন্স দেখা হচ্ছে…")}`
       : text("Sign in with Google to use your local credit balance.", "স্থানীয় ক্রেডিট ব্যালেন্স ব্যবহার করতে Google দিয়ে সাইন ইন করুন।");
     list.replaceChildren();
     if (!books.length && !legacyBooks.length)
@@ -142,8 +131,8 @@ export function mountProtectedCatalogue(store) {
         element(
           "p",
           text(
-            loading ? "Loading protected books…" : "No protected books published in the local test yet.",
-            loading ? "সুরক্ষিত বইয়ের তালিকা আসছে…" : "স্থানীয় পরীক্ষায় এখনও সুরক্ষিত বই প্রকাশ করা হয়নি।",
+            loading ? "Loading protected books…" : serviceUnavailable ? "The book catalogue could not be loaded. Please retry." : "No protected books published in the local test yet.",
+            loading ? "সুরক্ষিত বইয়ের তালিকা আসছে…" : serviceUnavailable ? "বইয়ের তালিকা আনা যায়নি। আবার চেষ্টা করুন।" : "স্থানীয় পরীক্ষায় এখনও সুরক্ষিত বই প্রকাশ করা হয়নি।",
           ),
         ),
       );
@@ -163,7 +152,7 @@ export function mountProtectedCatalogue(store) {
           : text("Purchase to unlock", "কিনে পুরো বই পড়ুন"),
       });
       foot.append(
-        element("p", `${taka(book.priceCredits)} · ${book.priceCredits} BW Credits`, "book-location"),
+        element("p", book.protectedReady ? `${taka(book.priceCredits)} · ${book.priceCredits} BW Credits` : text("Access setup required", "প্রবেশাধিকার প্রস্তুত করা প্রয়োজন"), "book-location"),
       );
       if (book.priceReference)
         foot.append(
@@ -176,6 +165,10 @@ export function mountProtectedCatalogue(store) {
             "book-location",
           ),
         );
+      if (!book.protectedReady) {
+        foot.append(element('p', text('This book is in Firebase. Its protected preview, price and licensed delivery need configuration.', 'বইটি Firebase-এ আছে। সুরক্ষিত প্রিভিউ, মূল্য ও লাইসেন্সভিত্তিক পড়া প্রস্তুত করা প্রয়োজন।'), 'book-location'));
+        list.append(card); continue;
+      }
       for (const action of offerActions(
         licensed,
         book.previewPages,
@@ -212,9 +205,9 @@ export function mountProtectedCatalogue(store) {
     }
     for (const book of legacyBooks) {
       const { card, foot } = catalogueCard({ id:book.id, title:book.title, author:book.author,
-        format:text('Digital book','ডিজিটাল বই'), status:text('Protected access not ready','সুরক্ষিত প্রবেশাধিকার প্রস্তুত নয়'), available:false,
-        description:text('This edition needs protected publishing and a price before preview or purchase can open.', 'এই সংস্করণের প্রিভিউ বা ক্রয় চালু করতে সুরক্ষিত প্রকাশনা ও মূল্য নির্ধারণ প্রয়োজন।') });
-      const locked = element('button', text('Not available yet','এখনও প্রস্তুত নয়'), 'request-button'); locked.disabled = true;
+        format:text('Digital book','ডিজিটাল বই'), status:serviceUnavailable ? text('Reading temporarily unavailable','পড়া সাময়িকভাবে বন্ধ') : text('Protected access not ready','সুরক্ষিত প্রবেশাধিকার প্রস্তুত নয়'), available:false,
+        description:serviceUnavailable ? text('Your book remains in the catalogue. Secure access will be checked when the reading service returns.', 'বইটি তালিকায় আছে। পড়ার পরিষেবা চালু হলে সুরক্ষিত প্রবেশাধিকার যাচাই হবে।') : text('This edition needs protected publishing and a price before preview or purchase can open.', 'এই সংস্করণের প্রিভিউ বা ক্রয় চালু করতে সুরক্ষিত প্রকাশনা ও মূল্য নির্ধারণ প্রয়োজন।') });
+      const locked = element('button', serviceUnavailable ? text('Reading unavailable','পড়া যাচ্ছে না') : text('Not available yet','এখনও প্রস্তুত নয়'), 'request-button'); locked.disabled = true;
       foot.append(locked); list.append(card);
     }
   }

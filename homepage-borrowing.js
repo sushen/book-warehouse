@@ -158,7 +158,7 @@ if (/^https?:$/.test(location.protocol)) {
   try {
     store = await createSparkStore(emulator);
     if (emulator) emulatorLogin(store.auth);
-    if(patchPrototype)mountProtectedCatalogue(store);
+    if (!emulator) mountProtectedCatalogue(store);
     catalogue = await store.catalogue();
     renderJourney = mountReaderJourney(store, () => catalogue, async () => { catalogue = await store.catalogue(); render(); });
     for (const id of ['search', 'location', 'availability']) {

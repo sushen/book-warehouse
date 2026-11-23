@@ -214,6 +214,11 @@ service cloud.firestore {
         (d.status == 'published' ? validName(d.author) && d.readerUrl == 'https://drive.google.com/file/d/' + d.fileId + '/view' : d.readerUrl == '');
     }
     match /digitalBooks/{id} {
+      allow update: if supervisor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priceCredits','pageCount','previewPages','chunkCount','accessMode','downloadAllowed','updatedAt','status']) &&
+        request.resource.data.priceCredits is int && request.resource.data.priceCredits > 0 && request.resource.data.priceCredits <= 1000000 &&
+        request.resource.data.pageCount is int && request.resource.data.pageCount > 0 && request.resource.data.pageCount <= 1500 &&
+        request.resource.data.previewPages is int && request.resource.data.previewPages >= 0 && request.resource.data.previewPages * 10 <= request.resource.data.pageCount &&
+        request.resource.data.accessMode == 'licensed' && request.resource.data.status in ['published','withdrawn'] && request.resource.data.updatedAt == request.time;
       allow get, list: if resource.data.status == 'published' || digitalAdmin();
       allow create: if digitalAdmin() && digitalValid(request.resource.data) &&
         request.resource.data.ownerUid == request.auth.uid && request.resource.data.createdAt == request.time && request.resource.data.status == 'uploading';
@@ -224,6 +229,101 @@ service cloud.firestore {
           ((resource.data.status == 'uploading' && request.resource.data.status == 'draft') ||
            (resource.data.status == 'draft' && request.resource.data.status == 'published'))));
     }
+    function hasBookLicense(bookId) {
+      let book = get(/databases/$(database)/documents/digitalBooks/$(bookId)).data;
+      let license = /databases/$(database)/documents/protectedLicenses/$(request.auth.uid + '_' + bookId + '_' + book.sha256);
+      return signedIn() && book.status == 'published' && exists(license) && get(license).data.status == 'active' && get(license).data.sha256 == book.sha256;
+    }
+    match /digitalBooks/{bookId}/pages/{pageId} {
+      allow get: if supervisor() || (get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.status == 'published' && resource.data.version == get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.sha256 &&
+        (resource.data.pageNumber <= get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.get('previewPages',0) || hasBookLicense(bookId)));
+      allow create,update: if supervisor() && request.resource.data.base64 is string && request.resource.data.base64.size() < 900000 && request.resource.data.mimeType in ['image/jpeg','image/png'];
+    }
+    match /digitalBooks/{bookId}/chunks/{chunkId} {
+      allow get: if supervisor() || (get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.get('downloadAllowed',false) && hasBookLicense(bookId));
+      allow create,update: if supervisor() && request.resource.data.base64 is string && request.resource.data.base64.size() < 900000;
+    }
+    // Spark-compatible atomic rights transactions. No browser may mint its own balance.
+    function boundedCredit(n) { return n is int && n >= 0 && n <= 1000000000; }
+    function walletAfter(uid) { return getAfter(/databases/$(database)/documents/protectedWallets/$(uid)).data; }
+    function walletBefore(uid) {
+      return exists(/databases/$(database)/documents/protectedWallets/$(uid)) ? get(/databases/$(database)/documents/protectedWallets/$(uid)).data.balance : 0;
+    }
+    function validLedger(d, id) {
+      return signedIn() && d.uid is string && boundedCredit(d.before) && boundedCredit(d.after) &&
+        d.before == walletBefore(d.uid) && d.after == d.before + d.amount && d.createdAt == request.time &&
+        walletAfter(d.uid).balance == d.after && walletAfter(d.uid).lastOperationId == id &&
+        ((d.kind == 'book-access' && validBookSpend(d,id)) || (d.kind == 'manually-verified-credit-topup' && validTopupCredit(d,id)) || (d.kind == 'admin-credit-grant' && supervisor() && d.actor == request.auth.uid && d.amount is int && d.amount > 0 && d.amount <= 1000000));
+    }
+    function validBookSpend(d,id) {
+      let book = get(/databases/$(database)/documents/digitalBooks/$(d.bookId)).data;
+      let expectedLicense = request.auth.uid + '_' + d.bookId + '_' + book.sha256;
+      let afterLicense = getAfter(/databases/$(database)/documents/protectedLicenses/$(expectedLicense)).data;
+      return d.kind == 'book-access' && d.uid == request.auth.uid && book.status == 'published' &&
+        book.priceCredits is int && book.priceCredits > 0 && d.amount == -book.priceCredits && d.version == book.sha256 &&
+        d.licenseId == expectedLicense && !exists(/databases/$(database)/documents/protectedLicenses/$(expectedLicense)) &&
+        afterLicense.uid == d.uid && afterLicense.bookId == d.bookId && afterLicense.version == book.sha256 &&
+        afterLicense.sha256 == book.sha256 && afterLicense.status == 'active' && afterLicense.operationId == id && afterLicense.createdAt == request.time;
+    }
+    function validTopupCredit(d,id) {
+      let before = get(/databases/$(database)/documents/protectedTopupRequests/$(d.requestId)).data;
+      let after = getAfter(/databases/$(database)/documents/protectedTopupRequests/$(d.requestId)).data;
+      let receipt = getAfter(/databases/$(database)/documents/protectedTopupReceipts/$(d.receiptId)).data;
+      return d.kind == 'manually-verified-credit-topup' && supervisor() && id == 'topup_' + d.requestId &&
+        before.status == 'pending-review' && after.status == 'approved' && after.reviewedBy == request.auth.uid &&
+        after.reviewedAt == request.time && d.uid == before.uid && d.amount == before.credits &&
+        d.amountMinor == before.amountMinor && d.currency == before.currency && d.provider == before.methodId &&
+        d.reference == after.verifiedReference && (before.reference == '' || before.reference == d.reference) &&
+        d.receiptId == before.methodId + '_' + d.reference &&
+        !exists(/databases/$(database)/documents/protectedTopupReceipts/$(d.receiptId)) && receipt.requestId == d.requestId && receipt.reference == d.reference && receipt.createdAt == request.time;
+    }
+    match /protectedWallets/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || supervisor());
+      allow create,update: if signedIn() && request.resource.data.keys().hasOnly(['balance','lastOperationId','updatedAt']) &&
+        request.resource.data.updatedAt == request.time &&
+        getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.lastOperationId)).data.uid == uid &&
+        validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.lastOperationId)).data, request.resource.data.lastOperationId);
+    }
+    match /protectedLedger/{id} {
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if validLedger(request.resource.data,id);
+    }
+    match /protectedLicenses/{id} {
+      allow update: if supervisor() && resource.data.status == 'active' && request.resource.data.status == 'revoked' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','revokedBy','revokedAt','reason']) &&
+        request.resource.data.revokedBy == request.auth.uid && request.resource.data.revokedAt == request.time &&
+        request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500;
+
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.operationId)).data.licenseId == id &&
+        validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.operationId)).data,request.resource.data.operationId);
+    }
+    function validTopupRequest(d) {
+      let method = get(/databases/$(database)/documents/protectedPaymentMethods/$(d.methodId)).data;
+      return signedIn() && d.uid == request.auth.uid && d.status == 'pending-review' && d.credits is int && d.credits > 0 && d.credits <= 1000000 &&
+        method.enabled == true && d.methodLabel == method.label && d.recipient == method.recipient &&
+        d.createdAt == request.time && d.updatedAt == request.time && d.reference is string && d.reference.size() <= 100 &&
+        (d.methodId == 'dutch-bangla' ? (d.senderAccountNumber is string && d.senderAccountNumber.size() >= 6 && d.senderAccountNumber.size() <= 64) : d.reference.matches('^[A-Z0-9_-]{4,100}$')) &&
+        (method.currency == 'USDT' ? (d.currency == 'USDT' && d.network == method.network && d.reference.matches('^0X[A-F0-9]{64}$') &&
+          d.amountMinor is int && d.amountMinor >= method.minimumAmountMinor &&
+          d.amountMinor * method.bdtPerUsdtMinor >= d.credits * 100000000 && (d.amountMinor - 1) * method.bdtPerUsdtMinor < d.credits * 100000000) :
+          (d.currency == 'BDT' && d.amountMinor == d.credits * 100));
+    }
+    match /protectedTopupRequests/{id} {
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if validTopupRequest(request.resource.data);
+      allow update: if supervisor() && resource.data.status == 'pending-review' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reason','verifiedReference','reviewedBy','reviewedAt']) &&
+        request.resource.data.reviewedBy == request.auth.uid && request.resource.data.reviewedAt == request.time &&
+        (request.resource.data.status == 'rejected' ? request.resource.data.reason is string && request.resource.data.reason.size() >= 3 :
+          request.resource.data.status == 'approved' && validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$('topup_' + id)).data,'topup_' + id));
+    }
+    match /protectedTopupReceipts/{id} {
+      allow get: if supervisor();
+      allow create: if supervisor() && validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$('topup_' + request.resource.data.requestId)).data,'topup_' + request.resource.data.requestId);
+    }
+    match /protectedPaymentMethods/{id} { allow get,list: if signedIn(); allow create,update: if supervisor(); }
     match /{document=**} { allow read, write: if false; }
   }
 }
