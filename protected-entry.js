@@ -1,5 +1,5 @@
 import { isLocalRuntime } from './local-runtime.js';
-if (isLocalRuntime(location)) {
+if (/^https?:$/.test(location.protocol)) {
   const nav =
     document.querySelector(".site-header nav") ||
     document.querySelector(".admin-nav");
@@ -10,8 +10,8 @@ if (isLocalRuntime(location)) {
     const label = () => {
       link.textContent =
         document.documentElement.lang === "bn"
-          ? "সুরক্ষিত বইয়ের স্থানীয় পরীক্ষা"
-          : "Protected books prototype";
+          ? "আপনার পড়ার জায়গা"
+          : "Your reading space";
     };
     label();
     new MutationObserver(label).observe(document.documentElement, {

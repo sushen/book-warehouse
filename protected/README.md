@@ -1,3 +1,13 @@
+# Current application: direct Firebase (0.1.2)
+
+Start with [the current release notes](../RELEASE-NOTES-0.1.2.md). Normal local and GitHub Pages frontends now share Firebase Auth, Firestore records and rule-enforced JavaScript transactions. They do not call protected/server.cjs, localhost APIs, Cloud Functions or an application emulator. The previous implementation notes below are historical and are superseded for normal application use.
+
+Current runtime modules: firebase-book-access.js (transport), firebase-credit-store.js (atomic money/license operations), firebase-pdf-store.js (authorized page/chunk data) and focused-book-reader.js (reading UI). firestore.rules is the authorization boundary. Never deploy the frontend without its matching tested rules.
+
+For publishing an existing PDF, use scripts/prepare-firebase-book-package.py with the existing Firebase book ID and expected source hash. Store the generated package outside the web tree and upload it through the owner’s Publishing tools. The importer writes bounded page/chunk documents first and changes publication/access metadata last. Keep original source fingerprints and known prices; do not reconstruct missing financial history. Runtime receiving instructions are read from authenticated protectedPaymentMethods; never put bank/mobile/wallet values in source control.
+
+For rule tests only, run the Firestore emulator and set FIRESTORE_EMULATOR_HOST before npm run test:firebase-rules. That emulator is disposable testing infrastructure, not the application database. The earlier server/core modules remain in the repository as historical/reusable code; do not use their local startup to launch the current web application.
+
 # Protected books — 0.1.1 review checkpoint
 
 Start with [the release boundary and remaining work](../RELEASE-NOTES-0.1.1.md). Both normal local frontends (ports 5173 and 5174) now use protected catalogue controls, and local Digital books administration opens protected publishing. Legacy full-PDF link rendering/publication is retired in this source. Existing public Drive files still need owner-controlled permission changes; this code cannot revoke already distributed links by hiding them. The new 200-credit title is not yet migrated and remains locked.

@@ -14,7 +14,8 @@
     "test:protected-google": "node --test tests/protected-google-identity.test.cjs",
     "test:protected-topups": "node --test tests/protected-topups.test.cjs",
     "test:protected-catalogue": "node --test tests/protected-catalogue.test.cjs",
-    "test:focused-reader": "node --test tests/focused-book-reader.test.cjs"
+    "test:focused-reader": "node --test tests/focused-book-reader.test.cjs",
+    "test:firebase-rules": "node --test tests/firebase-credit-store.test.cjs"
   },
   "dependencies": {
     "firebase": "^12.0.0"
@@ -24,5 +25,5 @@
     "@firebase/rules-unit-testing": "^5.0.0",
     "firebase-admin": "^13.0.0"
   },
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

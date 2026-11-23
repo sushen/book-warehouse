@@ -1,9 +1,8 @@
-import { isLocalRuntime } from './local-runtime.js';
 /** Public Drive-link publication was retired when paid access became required. */
 export function initDigitalAdmin() {
   const section = document.getElementById('digital-books');
   const render = () => {
-    const bn = document.documentElement.lang === 'bn', local = isLocalRuntime(location);
+    const bn = document.documentElement.lang === 'bn', local = /^https?:$/.test(location.protocol);
     section.replaceChildren();
     const heading = document.createElement('h2'), note = document.createElement('p'), warning = document.createElement('p');
     heading.textContent = bn ? 'সুরক্ষিত ডিজিটাল প্রকাশনা' : 'Protected digital publishing';

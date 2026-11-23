@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const {
   initializeTestEnvironment,
   assertFails,
+  assertSucceeds,
 } = require("@firebase/rules-unit-testing");
 const { doc, setDoc, getDoc } = require("firebase/firestore");
 if (!/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || ""))
@@ -39,8 +40,18 @@ test("browser cannot forge balances, payment evidence, licenses or inspect priva
       }),
     );
     await env.withSecurityRulesDisabled((ctx) =>
-      setDoc(doc(ctx.firestore(), collection, "private"), { uid: "reader" }),
+      setDoc(doc(ctx.firestore(), collection, "private"), { uid: "another-reader" }),
     );
     await assertFails(getDoc(doc(reader, collection, "private")));
   }
+});
+test('Firebase readers can read only their own wallet/license/request state, never private book content', async()=>{
+  const env=await setup, reader=env.authenticatedContext('reader').firestore();
+  await env.withSecurityRulesDisabled(async ctx=>{
+    for(const [collection,id,data] of [['protectedWallets','reader',{balance:1040}],['protectedLicenses','own',{uid:'reader',bookId:'book',status:'active'}],['protectedTopupRequests','own',{uid:'reader',status:'pending-review'}],['protectedContent','private',{version:'v1',originalPath:'private.pdf'}]])await setDoc(doc(ctx.firestore(),collection,id),data);
+  });
+  await assertSucceeds(getDoc(doc(reader,'protectedWallets','reader')));
+  await assertSucceeds(getDoc(doc(reader,'protectedLicenses','own')));
+  await assertSucceeds(getDoc(doc(reader,'protectedTopupRequests','own')));
+  await assertFails(getDoc(doc(reader,'protectedContent','private')));
 });

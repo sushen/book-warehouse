@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 — 23 November 2026
+
+- Use persistent Firebase for the normal local and Pages catalogue, wallets, licenses and payment-request workflow.
+- Validate JavaScript credit/purchase transactions with Firestore rules.
+- Publish the protected reader in the Pages build and serve preview/licensed pages and original download chunks through Firebase authorization.
+- Migrate the two existing books, with no temporary financial data reconstruction. See RELEASE-NOTES-0.1.2.md.
+
+
 ## 0.1.1 — review checkpoint, 22 November 2026
 
 - Add private PDF processing, encrypted originals, previews and server-authorized licenses.

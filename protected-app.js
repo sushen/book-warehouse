@@ -1,12 +1,11 @@
 import { createSparkStore } from "./spark-store.js";
-import { emulatorLogin } from "./emulator-login.js";
-import { ProtectedBooksClient } from "./protected-client.js";
+import { FirebaseBookAccess } from "./firebase-book-access.js";
 import { taka, offerActions } from "./protected-offer.js";
 import { CreditTopupView } from "./credit-topup-ui.js";
 import { catalogueCard } from "./catalogue-card.js";
 import { FocusedBookReader } from "./focused-book-reader.js";
-const $ = (id) => document.getElementById(id),
-  origin = "http://127.0.0.1:8787";
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
+const $ = (id) => document.getElementById(id);
 const node = (tag, text = "", className = "") => {
   const e = document.createElement(tag);
   e.textContent = text;
@@ -21,10 +20,7 @@ let store,
   licenses = {},
   epoch = 0,
   routeOpened = false;
-const client = new ProtectedBooksClient({
-  origin,
-  getUser: () => store?.user(),
-});
+let client;
 const requestedBook = new URLSearchParams(location.search).get("book"),
   requestedMode = new URLSearchParams(location.search).get("mode");
 const operations = new Map();
@@ -175,6 +171,10 @@ function render() {
     const { card, foot } = catalogueCard({ id:book.id, title:book.title, author:book.author,
       format:'Digital edition', location:`${book.previewPages} preview pages · ${book.pageCount} pages in all`,
       status:licenses[book.id] ? 'In your library' : `${taka(book.priceCredits)} · ${book.priceCredits} credits`, available:true });
+    if (!book.protectedReady) {
+      foot.replaceChildren(node('p','This book is saved in Firebase. Protected delivery is awaiting configuration.','book-location'));
+      $('protected-books').append(card); continue;
+    }
     for (const access of offerActions(
       licenses[book.id] === true,
       book.previewPages,
@@ -330,7 +330,7 @@ async function report() {
     head.append(node("th", text));
   table.append(head);
   for (const entry of data.entries) {
-    const names = { 'test-credit-grant':'Admin credit grant', 'book-access':'Book purchase', 'manually-verified-credit-topup':'Credit sale — manually confirmed', 'verified-credit-topup':'Credit sale — provider verified' };
+    const names = { 'test-credit-grant':'Admin credit grant', 'admin-credit-grant':'Admin credit grant', 'book-access':'Book purchase', 'manually-verified-credit-topup':'Credit sale — manually confirmed', 'verified-credit-topup':'Credit sale — provider verified' };
     const row = node("tr");
     for (const value of [
       names[entry.kind] || entry.kind,
@@ -427,6 +427,16 @@ $("protected-revoke").onsubmit = (e) => {
   });
 };
 $("protected-refresh").onclick = () => action(refresh);
+$('firebase-import-book').onclick = () => action(async()=>{
+  const file=$('firebase-book-package').files[0];if(!file)throw Error('Select a prepared book package.');
+  await client.pdf.uploadPackage(file,(done,total)=>{$('protected-feedback').textContent=`Saving protected book to Firebase: ${done}/${total}`;});
+  $('protected-feedback').textContent='Protected book saved to Firebase.';
+});
+$('firebase-import-methods').onclick = () => action(async()=>{
+  const file=$('firebase-methods-file').files[0];if(!file)throw Error('Select the payment-method configuration.');
+  const methods=JSON.parse(await file.text());for(const method of methods)await setDoc(doc(getFirestore(store.app),'protectedPaymentMethods',method.id),method);
+  $('protected-feedback').textContent='Payment methods saved to Firebase.';
+});
 for (const name of ["referenceAmount", "referenceRate"])
   $("protected-upload").elements[name].addEventListener("input", () => {
     const form = $("protected-upload"),
@@ -445,14 +455,13 @@ for (const name of ["referenceAmount", "referenceRate"])
         (amount * rate) / 100_000_000,
       );
   });
-if (!["127.0.0.1", "localhost"].includes(location.hostname)) {
+if (!/^https?:$/.test(location.protocol)) {
   $("protected-feedback").textContent =
     "The protected-books prototype is local only. No payment or protected-content service is deployed.";
 } else
   try {
-    const emulator = new URLSearchParams(location.search).get("emulator") === "1";
-    store = await createSparkStore(emulator);
-    if (emulator) emulatorLogin(store.auth);
+    store = await createSparkStore(false);
+    client = new FirebaseBookAccess({ store });
     store.onAuth(() => {
       epoch++;
       $("protected-admin").hidden = true;
@@ -471,5 +480,5 @@ if (!["127.0.0.1", "localhost"].includes(location.hostname)) {
     await refresh();
   } catch (error) {
     $("protected-feedback").textContent =
-      "Local protected service unavailable. " + error.message;
+      "Firebase book access could not load. " + error.message;
   }
