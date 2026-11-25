@@ -18,9 +18,11 @@
     <div class="wrap header-inner">
       <a class="brand" href="#home" aria-label="Book Warehouse home"><span class="brand-mark" aria-hidden="true">B<span>W</span></span><span>Book Warehouse</span></a>
       <nav aria-label="Main navigation">
-        <a href="#how-it-works">How it works</a>
         <a href="#catalogue">Catalogue</a>
         <a href="#journey">Demo journey</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="admin.html" id="admin-dashboard-link">Admin dashboard</a>
+        <a id="shared-mode-link" href="spark-emulator.html" hidden></a>
       </nav>
       <div class="language-switch" role="group" aria-label="Language / ভাষা">
         <button type="button" data-locale="bn" lang="bn" aria-pressed="true">বাংলা</button>
@@ -36,7 +38,7 @@
           <p class="eyebrow">A connected book &amp; knowledge network</p>
           <h1 id="hero-title">Book Warehouse</h1>
           <p class="hero-lede">A way to help readers discover books and reach the local spaces that hold them.</p>
-          <p class="hero-detail">This first demonstration follows a book from discovery to return. The founder maintains the software; participating operators would handle collection, lending, and physical care.</p>
+          <p class="hero-detail">Search fictional local books, request a sample copy, and follow its journey.</p>
           <a class="button button-light" href="#catalogue">Explore the demo <span aria-hidden="true">↗</span></a>
         </div>
         <div class="book-scene" aria-label="Illustration of a fictional shelf of books" role="img">
@@ -44,24 +46,6 @@
           <div class="shelf shelf-one"><span class="spine spine-red"></span><span class="spine spine-tall"></span><span class="spine spine-blue"></span><span class="spine spine-cream"></span><span class="spine spine-green"></span><span class="spine spine-slim"></span></div>
           <div class="shelf shelf-two"><span class="spine spine-cream"></span><span class="spine spine-blue"></span><span class="spine spine-red"></span><span class="spine spine-slim"></span><span class="spine spine-tall"></span></div>
         </div>
-      </div>
-    </section>
-
-    <section class="intro-band" id="how-it-works" aria-labelledby="how-title">
-      <div class="wrap">
-        <div class="section-heading"><p class="eyebrow">A simple starting point</p><h2 id="how-title">Books move through people and places.</h2></div>
-        <div class="steps">
-          <div><span class="step-number">01</span><h3>Find a book</h3><p>Explore a shared catalogue with clear copy locations and availability.</p></div>
-          <div><span class="step-number">02</span><h3>Request a copy</h3><p>A reader starts a request for a specific available copy.</p></div>
-          <div><span class="step-number">03</span><h3>Follow its journey</h3><p>An operator confirms collection, lending, and return in the record.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="benefits-band" aria-labelledby="benefits-title">
-      <div class="wrap benefits-grid">
-        <div><p class="eyebrow">For readers</p><h2 id="benefits-title">A clearer path to the next book.</h2><p>See what is nearby, find a subject or author, and understand where a requested copy stands.</p></div>
-        <div><p class="eyebrow">For library partners</p><h2>A shared view of local collections.</h2><p>Participating operators could make books easier to discover while retaining responsibility for physical services and status updates.</p></div>
       </div>
     </section>
 
@@ -92,9 +76,31 @@
       </div>
     </section>
 
+    <section class="intro-band" id="how-it-works" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-heading"><p class="eyebrow">A simple starting point</p><h2 id="how-title">Books move through people and places.</h2></div>
+        <div class="steps">
+          <div><span class="step-number">01</span><h3>Find a book</h3><p>Explore a shared catalogue with clear copy locations and availability.</p></div>
+          <div><span class="step-number">02</span><h3>Request a copy</h3><p>A reader starts a request for a specific available copy.</p></div>
+          <div><span class="step-number">03</span><h3>Follow its journey</h3><p>An operator confirms collection, lending, and return in the record.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="benefits-band" aria-labelledby="benefits-title">
+      <div class="wrap benefits-grid">
+        <div><p class="eyebrow">For readers</p><h2 id="benefits-title">A clearer path to the next book.</h2><p>See what is nearby, find a subject or author, and understand where a requested copy stands.</p></div>
+        <div><p class="eyebrow">For library partners</p><h2>A shared view of local collections.</h2><p>Participating operators could make books easier to discover while retaining responsibility for physical services and status updates.</p></div>
+      </div>
+    </section>
+
     <section class="vision-band" aria-labelledby="vision-title"><div class="wrap vision-grid"><div><p class="eyebrow">The wider vision</p><h2 id="vision-title">More than circulation.</h2></div><p>Book Warehouse also imagines connections between translation, publishing, and discovery through questions and ideas. Those capabilities are future work, not services offered by this demonstration.</p></div></section>
   </main>
   <footer class="site-footer"><div class="wrap footer-inner"><span>Book Warehouse</span><span>Fictional local demonstration · No real requests</span></div></footer>
   <noscript><p class="noscript" lang="bn">নমুনা বইয়ের তালিকা ও অনুরোধের যাত্রা ব্যবহার করতে জাভাস্ক্রিপ্ট প্রয়োজন।</p></noscript>
+  <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" hidden><span aria-hidden="true">&#8593;</span></button>
+<script type="module" src="homepage-borrowing.js"></script>
+<script type="module" src="digital-catalogue.js"></script>
+<script type="module" src="protected-entry.js"></script>
 </body>
 </html>

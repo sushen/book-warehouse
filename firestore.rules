@@ -1,0 +1,338 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function grant() { return /databases/$(database)/documents/adminGrants/$(request.auth.uid); }
+    function admin() { return signedIn() && exists(grant()) && get(grant()).data.status == 'active' && get(grant()).data.get('role', 'admin') != 'superuser'; }
+    function superuser() { return signedIn() && exists(grant()) && get(grant()).data.status == 'active' && get(grant()).data.role == 'superuser'; }
+    function supervisor() { return admin() || superuser(); }
+    function operator(libraryId) {
+      let path = /databases/$(database)/documents/memberships/$(libraryId + '_' + request.auth.uid);
+      return signedIn() && exists(path) && get(path).data.status == 'active' && get(path).data.role == 'operator' &&
+        get(path).data.uid == request.auth.uid && get(path).data.libraryId == libraryId;
+    }
+    function copyPath(id) { return /databases/$(database)/documents/copies/$(id); }
+    function sparkPath(id) { return /databases/$(database)/documents/sparkRequests/$(id); }
+    function reader() {
+      let path = /databases/$(database)/documents/accounts/$(request.auth.uid);
+      return signedIn() && !superuser() && exists(path) && get(path).data.status == 'active';
+    }
+    function validName(name) {
+      return name is string && name.size() <= 120 && name.matches('.*[^\\s].*');
+    }
+    function requestKeys(d) {
+      return d.keys().hasAll(['readerUid','copyId','libraryId','operationId','state','createdAt','updatedAt','readyAt','borrowedAt','returnedAt','cancelledAt','version']) &&
+        d.keys().hasOnly(['readerUid','readerName','copyId','libraryId','operationId','state','createdAt','updatedAt','readyAt','borrowedAt','returnedAt','cancelledAt','version','reviewedBy','reviewedAt','decisionReason']);
+    }
+    function sparkCreate(id, d) {
+      let copy = get(copyPath(d.copyId)).data;
+      let next = getAfter(copyPath(d.copyId)).data;
+      return reader() && requestKeys(d) && !d.keys().hasAny(['reviewedBy','reviewedAt','decisionReason']) && d.keys().hasAll(['readerName']) && d.readerUid == request.auth.uid &&
+        validName(d.readerName) && d.readerName == get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.displayName &&
+        d.operationId is string && d.operationId.matches('^[A-Za-z0-9_-]{1,128}$') &&
+        id == request.auth.uid + '_' + d.operationId &&
+        d.state == 'requested' && d.version == 1 && d.createdAt == request.time && d.updatedAt == request.time &&
+        d.readyAt == null && d.borrowedAt == null && d.returnedAt == null && d.cancelledAt == null &&
+        copy.visibility == 'public' && copy.libraryId == d.libraryId && copy.availability == 'available' && copy.activeRequestId == null &&
+        next.availability == 'held' && next.activeRequestId == id && next.version == copy.version + 1;
+    }
+    function nextAvailability(state) { return state == 'ready' ? 'ready' : state == 'borrowed' ? 'onLoan' : 'available'; }
+    function priorAvailability(state) { return state == 'requested' ? 'held' : state == 'ready' ? 'ready' : 'onLoan'; }
+    function legalStage(before, after) {
+      return (before.state == 'requested' && after.state == 'ready') ||
+        ((before.state == 'requested' || before.state == 'ready') && after.state == 'cancelled') ||
+        (before.state == 'ready' && after.state == 'borrowed') ||
+        (before.state == 'borrowed' && after.state == 'returned');
+    }
+    function timestampFields(before, after) {
+      return (after.state == 'ready' ? after.readyAt == request.time : after.readyAt == before.readyAt) &&
+        (after.state == 'borrowed' ? after.borrowedAt == request.time : after.borrowedAt == before.borrowedAt) &&
+        (after.state == 'returned' ? after.returnedAt == request.time : after.returnedAt == before.returnedAt) &&
+        (after.state == 'cancelled' ? after.cancelledAt == request.time : after.cancelledAt == before.cancelledAt);
+    }
+    function reviewFields(before, after) {
+      let changed = after.diff(before).affectedKeys();
+      return changed.hasAny(['reviewedBy','reviewedAt','decisionReason']) ?
+        supervisor() && before.state == 'requested' && after.state in ['ready','cancelled'] &&
+        after.reviewedBy == request.auth.uid && after.reviewedAt == request.time &&
+        after.decisionReason is string && after.decisionReason.size() <= 500 &&
+        (after.state == 'ready' || after.decisionReason.size() >= 3) :
+        !(supervisor() && before.state == 'requested' && after.state in ['ready','cancelled']);
+    }
+    function sparkUpdate(id, before, after) {
+      let copy = get(copyPath(before.copyId)).data;
+      let next = getAfter(copyPath(before.copyId)).data;
+      return signedIn() && requestKeys(after) && legalStage(before, after) &&
+        after.diff(before).affectedKeys().hasOnly(['state','updatedAt','version','readyAt','borrowedAt','returnedAt','cancelledAt','reviewedBy','reviewedAt','decisionReason']) &&
+        after.readerUid == before.readerUid && after.get('readerName', '') == before.get('readerName', '') && after.copyId == before.copyId && after.libraryId == before.libraryId && after.operationId == before.operationId &&
+        after.createdAt == before.createdAt && after.version == before.version + 1 && after.updatedAt == request.time &&
+        timestampFields(before, after) && reviewFields(before, after) &&
+        (after.state == 'cancelled' ? request.auth.uid == before.readerUid || (supervisor() && before.state == 'requested') : operator(before.libraryId) || supervisor()) &&
+        copy.libraryId == before.libraryId && copy.activeRequestId == id && copy.availability == priorAvailability(before.state) &&
+        next.version == copy.version + 1 && next.availability == nextAvailability(after.state) &&
+        next.activeRequestId == (after.state == 'cancelled' || after.state == 'returned' ? null : id);
+    }
+    function existingCopyUpdate(id, before, after, next) {
+      let old = get(sparkPath(id)).data;
+      return signedIn() && old.copyId == next.copyId && old.readerUid == next.readerUid && old.get('readerName', '') == next.get('readerName', '') &&
+        old.version + 1 == next.version && legalStage(old, next) &&
+        before.availability == priorAvailability(old.state) && after.availability == nextAvailability(next.state) &&
+        after.activeRequestId == (next.state == 'cancelled' || next.state == 'returned' ? null : id) &&
+        (next.state == 'cancelled' ? request.auth.uid == old.readerUid || (supervisor() && old.state == 'requested') : operator(before.libraryId) || supervisor());
+    }
+    function copyUpdate(id, before, after) {
+      let requestId = before.activeRequestId == null ? after.activeRequestId : before.activeRequestId;
+      let next = getAfter(sparkPath(requestId)).data;
+      return requestId is string &&
+        after.diff(before).affectedKeys().hasOnly(['availability','activeRequestId','updatedAt','version']) &&
+        after.version == before.version + 1 && after.updatedAt == request.time &&
+        next.copyId == id && next.libraryId == before.libraryId &&
+        (before.activeRequestId == null ?
+          reader() && !exists(sparkPath(requestId)) && before.availability == 'available' &&
+          after.availability == 'held' && after.activeRequestId == requestId && next.state == 'requested' &&
+          next.version == 1 && next.readerUid == request.auth.uid :
+          existingCopyUpdate(requestId, before, after, next));
+    }
+    function catalogueRecord(d, allowed) {
+      return supervisor() && d.keys().hasOnly(allowed) && d.visibility == 'public' &&
+        d.createdAt == request.time && d.updatedAt == request.time;
+    }
+    match /libraries/{id} {
+      allow get, list: if (resource.data.visibility == 'public' && resource.data.status == 'active') || supervisor();
+      allow create: if catalogueRecord(request.resource.data, ['name','area','approvedPickupLocation','publicHelpContact','status','visibility','createdAt','updatedAt']) &&
+        validName(request.resource.data.name.en) && validName(request.resource.data.name.bn) &&
+        request.resource.data.area is map && request.resource.data.approvedPickupLocation is map &&
+        request.resource.data.publicHelpContact is string && request.resource.data.publicHelpContact.size() <= 200 &&
+        request.resource.data.status == 'active';
+    }
+    match /works/{id} {
+      allow get, list: if resource.data.visibility == 'public' || supervisor();
+      allow update: if supervisor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived','updatedAt']) &&
+        request.resource.data.archived is bool && request.resource.data.updatedAt == request.time;
+      allow create: if catalogueRecord(request.resource.data, ['title','authorDisplay','topics','visibility','createdAt','updatedAt']) &&
+        validName(request.resource.data.title.en) && validName(request.resource.data.title.bn) &&
+        validName(request.resource.data.authorDisplay.en) && validName(request.resource.data.authorDisplay.bn) &&
+        request.resource.data.topics is map;
+    }
+    match /editions/{id} {
+      allow get, list: if resource.data.visibility == 'public' || supervisor();
+      allow create: if catalogueRecord(request.resource.data, ['workId','languageCode','format','isbn','visibility','createdAt','updatedAt']) &&
+        existsAfter(/databases/$(database)/documents/works/$(request.resource.data.workId)) &&
+        request.resource.data.languageCode in ['bn','en','other'] && request.resource.data.format == 'print' &&
+        request.resource.data.isbn is string && request.resource.data.isbn.size() <= 32;
+    }
+    match /copies/{id} {
+      allow get, list: if resource.data.visibility == 'public' || operator(resource.data.libraryId) || supervisor();
+      allow update: if copyUpdate(id, resource.data, request.resource.data);
+      allow create: if catalogueRecord(request.resource.data, ['editionId','libraryId','visibility','availability','activeRequestId','version','createdAt','updatedAt']) &&
+        existsAfter(/databases/$(database)/documents/editions/$(request.resource.data.editionId)) &&
+        existsAfter(/databases/$(database)/documents/libraries/$(request.resource.data.libraryId)) &&
+        request.resource.data.availability == 'available' && request.resource.data.activeRequestId == null && request.resource.data.version == 0;
+    }
+    match /inventoryOperations/{id} {
+      allow get: if supervisor();
+      allow create: if supervisor() && request.resource.data.keys().hasOnly(['actorUid','workId','editionId','libraryId','quantity','createdAt']) &&
+        request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time &&
+        request.resource.data.quantity is int && request.resource.data.quantity > 0 && request.resource.data.quantity <= 20 &&
+        existsAfter(/databases/$(database)/documents/editions/$(request.resource.data.editionId)) &&
+        existsAfter(/databases/$(database)/documents/libraries/$(request.resource.data.libraryId));
+    }
+    match /accounts/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid) || admin();
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasAll(['displayName','status','createdAt','updatedAt']) &&
+        request.resource.data.keys().hasOnly(['displayName','status','createdAt','updatedAt']) &&
+        request.resource.data.displayName is string && request.resource.data.displayName.size() <= 120 &&
+        request.resource.data.status == 'active' && request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','updatedAt']) &&
+        validName(request.resource.data.displayName) && request.resource.data.updatedAt == request.time;
+    }
+    match /memberships/{id} { allow get, list: if (signedIn() && resource.data.uid == request.auth.uid) || admin(); }
+    match /adminGrants/{uid} { allow get: if (signedIn() && request.auth.uid == uid) || admin(); }
+    match /requests/{id} { allow get, list: if (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId) || superuser() || admin(); }
+    match /requestContacts/{id} { allow get: if (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId); }
+    match /loans/{id} { allow get, list: if (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId) || admin(); }
+    match /operations/{id} { allow get: if signedIn() && resource.data.uid == request.auth.uid; }
+    match /sparkRequests/{id} {
+      allow get: if (resource == null && signedIn()) ||
+        (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId) || supervisor();
+      allow list: if (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId) || supervisor();
+      allow create: if sparkCreate(id, request.resource.data);
+      allow update: if sparkUpdate(id, resource.data, request.resource.data);
+    }
+    match /sparkContacts/{id} {
+      allow get: if (signedIn() && resource.data.readerUid == request.auth.uid) || operator(resource.data.libraryId);
+      allow create: if signedIn() && !exists(sparkPath(id)) &&
+        getAfter(sparkPath(id)).data.readerUid == request.auth.uid &&
+        getAfter(sparkPath(id)).data.libraryId == request.resource.data.libraryId &&
+        request.resource.data.keys().hasAll(['readerUid','libraryId','whatsapp']) &&
+        request.resource.data.keys().hasOnly(['readerUid','libraryId','whatsapp']) &&
+        request.resource.data.readerUid == request.auth.uid && request.resource.data.whatsapp is string &&
+        request.resource.data.whatsapp.matches('^\\+[1-9][0-9]{7,14}$');
+    }
+    function validSignal(id, d) {
+      let loan = get(sparkPath(id)).data;
+      let copy = get(copyPath(loan.copyId)).data;
+      return signedIn() && request.auth.uid == loan.readerUid &&
+        d.keys().hasAll(['readerUid','libraryId','pickupRequestedAt','returnRequestedAt','updatedAt']) &&
+        d.keys().hasOnly(['readerUid','libraryId','pickupRequestedAt','returnRequestedAt','updatedAt']) &&
+        d.readerUid == loan.readerUid && d.libraryId == loan.libraryId && d.updatedAt == request.time &&
+        copy.activeRequestId == id && copy.libraryId == loan.libraryId &&
+        (d.pickupRequestedAt == null || d.pickupRequestedAt is timestamp) &&
+        (d.returnRequestedAt == null || d.returnRequestedAt is timestamp);
+    }
+    match /borrowingSignals/{id} {
+      allow get: if signedIn() && (resource == null ? get(sparkPath(id)).data.readerUid == request.auth.uid || supervisor() :
+        resource.data.readerUid == request.auth.uid || operator(resource.data.libraryId) || supervisor());
+      allow list: if signedIn() && (resource.data.readerUid == request.auth.uid || operator(resource.data.libraryId) || supervisor());
+      allow create: if validSignal(id, request.resource.data) &&
+        ((get(sparkPath(id)).data.state == 'ready' && request.resource.data.pickupRequestedAt == request.time && request.resource.data.returnRequestedAt == null) ||
+         (get(sparkPath(id)).data.state == 'borrowed' && request.resource.data.returnRequestedAt == request.time && request.resource.data.pickupRequestedAt == null));
+      allow update: if validSignal(id, request.resource.data) &&
+        ((get(sparkPath(id)).data.state == 'ready' && resource.data.pickupRequestedAt == null &&
+          request.resource.data.pickupRequestedAt == request.time && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pickupRequestedAt','updatedAt'])) ||
+         (get(sparkPath(id)).data.state == 'borrowed' && resource.data.returnRequestedAt == null &&
+          request.resource.data.returnRequestedAt == request.time && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['returnRequestedAt','updatedAt'])));
+    }
+    function digitalAdmin() {
+      return signedIn() && exists(grant()) && get(grant()).data.status == 'active' &&
+        get(grant()).data.get('role', 'admin') in ['admin','superuser'];
+    }
+    function digitalValid(d) {
+      return d.keys().hasAll(['title','author','language','description','size','sha256','folderId','fileId','ownerUid','status','readerUrl','createdAt','updatedAt']) &&
+        d.keys().hasOnly(['title','author','language','description','size','sha256','folderId','fileId','ownerUid','status','readerUrl','createdAt','updatedAt']) &&
+        validName(d.title) && d.author is string && d.author.size() <= 120 &&
+        d.description is string && d.description.size() <= 2000 && d.language in ['bn','en','other'] &&
+        d.size is int && d.size > 0 && d.size <= 26214400 &&
+        d.sha256 is string && d.sha256.matches('^[a-f0-9]{64}$') &&
+        d.fileId is string && d.fileId.matches('^[A-Za-z0-9_-]{1,200}$') &&
+        d.folderId is string && d.folderId.matches('^[A-Za-z0-9_-]{1,200}$') &&
+        d.ownerUid is string && d.createdAt is timestamp && d.updatedAt == request.time &&
+        d.status in ['uploading','draft','published'] &&
+        (d.status == 'published' ? validName(d.author) && d.readerUrl == 'https://drive.google.com/file/d/' + d.fileId + '/view' : d.readerUrl == '');
+    }
+    match /digitalBooks/{id} {
+      allow update: if supervisor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priceCredits','pageCount','previewPages','chunkCount','accessMode','downloadAllowed','updatedAt','status']) &&
+        request.resource.data.priceCredits is int && request.resource.data.priceCredits > 0 && request.resource.data.priceCredits <= 1000000 &&
+        request.resource.data.pageCount is int && request.resource.data.pageCount > 0 && request.resource.data.pageCount <= 1500 &&
+        request.resource.data.previewPages is int && request.resource.data.previewPages >= 0 && request.resource.data.previewPages * 10 <= request.resource.data.pageCount &&
+        request.resource.data.accessMode == 'licensed' && request.resource.data.status in ['published','withdrawn'] && request.resource.data.updatedAt == request.time;
+      allow get, list: if resource.data.status == 'published' || digitalAdmin();
+      allow create: if digitalAdmin() && digitalValid(request.resource.data) &&
+        request.resource.data.ownerUid == request.auth.uid && request.resource.data.createdAt == request.time && request.resource.data.status == 'uploading';
+      allow update: if digitalAdmin() && digitalValid(request.resource.data) &&
+        ((resource.data.status == 'draft' && request.resource.data.status == 'draft' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','author','language','description','updatedAt'])) ||
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','readerUrl','updatedAt']) &&
+          ((resource.data.status == 'uploading' && request.resource.data.status == 'draft') ||
+           (resource.data.status == 'draft' && request.resource.data.status == 'published'))));
+    }
+    match /protectedPublishingOperations/{id} {
+      allow get: if digitalAdmin();
+      allow create: if digitalAdmin() && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.sha256 is string && request.resource.data.sha256.matches('^[a-f0-9]{64}$') &&
+        request.resource.data.bookId is string && request.resource.data.fileId is string && request.resource.data.folderId is string &&
+        request.resource.data.createdAt == request.time && request.resource.data.priceCredits is int && request.resource.data.priceCredits > 0 && request.resource.data.priceCredits <= 1000000 &&
+        validName(request.resource.data.title) && validName(request.resource.data.author) &&
+        request.resource.data.ownershipClaim is string && request.resource.data.ownershipClaim.size() > 0 && request.resource.data.ownershipClaim.size() <= 2000;
+    }
+    function hasBookLicense(bookId) {
+      let book = get(/databases/$(database)/documents/digitalBooks/$(bookId)).data;
+      let license = /databases/$(database)/documents/protectedLicenses/$(request.auth.uid + '_' + bookId + '_' + book.sha256);
+      return signedIn() && book.status == 'published' && exists(license) && get(license).data.status == 'active' && get(license).data.sha256 == book.sha256;
+    }
+    match /digitalBooks/{bookId}/pages/{pageId} {
+      allow get: if supervisor() || (get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.status == 'published' && resource.data.version == get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.sha256 &&
+        (resource.data.pageNumber <= get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.get('previewPages',0) || hasBookLicense(bookId)));
+      allow create,update: if supervisor() && request.resource.data.base64 is string && request.resource.data.base64.size() < 900000 && request.resource.data.mimeType in ['image/jpeg','image/png'];
+    }
+    match /digitalBooks/{bookId}/chunks/{chunkId} {
+      allow get: if supervisor() || (get(/databases/$(database)/documents/digitalBooks/$(bookId)).data.get('downloadAllowed',false) && hasBookLicense(bookId));
+      allow create,update: if supervisor() && request.resource.data.base64 is string && request.resource.data.base64.size() < 900000;
+    }
+    // Spark-compatible atomic rights transactions. No browser may mint its own balance.
+    function boundedCredit(n) { return n is int && n >= 0 && n <= 1000000000; }
+    function walletAfter(uid) { return getAfter(/databases/$(database)/documents/protectedWallets/$(uid)).data; }
+    function walletBefore(uid) {
+      return exists(/databases/$(database)/documents/protectedWallets/$(uid)) ? get(/databases/$(database)/documents/protectedWallets/$(uid)).data.balance : 0;
+    }
+    function validLedger(d, id) {
+      return signedIn() && d.uid is string && boundedCredit(d.before) && boundedCredit(d.after) &&
+        d.before == walletBefore(d.uid) && d.after == d.before + d.amount && d.createdAt == request.time &&
+        walletAfter(d.uid).balance == d.after && walletAfter(d.uid).lastOperationId == id &&
+        ((d.kind == 'book-access' && validBookSpend(d,id)) || (d.kind == 'manually-verified-credit-topup' && validTopupCredit(d,id)) || (d.kind == 'admin-credit-grant' && supervisor() && d.actor == request.auth.uid && d.amount is int && d.amount > 0 && d.amount <= 1000000));
+    }
+    function validBookSpend(d,id) {
+      let book = get(/databases/$(database)/documents/digitalBooks/$(d.bookId)).data;
+      let expectedLicense = request.auth.uid + '_' + d.bookId + '_' + book.sha256;
+      let afterLicense = getAfter(/databases/$(database)/documents/protectedLicenses/$(expectedLicense)).data;
+      return d.kind == 'book-access' && d.uid == request.auth.uid && book.status == 'published' &&
+        book.priceCredits is int && book.priceCredits > 0 && d.amount == -book.priceCredits && d.version == book.sha256 &&
+        d.licenseId == expectedLicense && !exists(/databases/$(database)/documents/protectedLicenses/$(expectedLicense)) &&
+        afterLicense.uid == d.uid && afterLicense.bookId == d.bookId && afterLicense.version == book.sha256 &&
+        afterLicense.sha256 == book.sha256 && afterLicense.status == 'active' && afterLicense.operationId == id && afterLicense.createdAt == request.time;
+    }
+    function validTopupCredit(d,id) {
+      let before = get(/databases/$(database)/documents/protectedTopupRequests/$(d.requestId)).data;
+      let after = getAfter(/databases/$(database)/documents/protectedTopupRequests/$(d.requestId)).data;
+      let receipt = getAfter(/databases/$(database)/documents/protectedTopupReceipts/$(d.receiptId)).data;
+      return d.kind == 'manually-verified-credit-topup' && supervisor() && id == 'topup_' + d.requestId &&
+        before.status == 'pending-review' && after.status == 'approved' && after.reviewedBy == request.auth.uid &&
+        after.reviewedAt == request.time && d.uid == before.uid && d.amount == before.credits &&
+        d.amountMinor == before.amountMinor && d.currency == before.currency && d.provider == before.methodId &&
+        d.reference == after.verifiedReference && (before.reference == '' || before.reference == d.reference) &&
+        d.receiptId == before.methodId + '_' + d.reference &&
+        !exists(/databases/$(database)/documents/protectedTopupReceipts/$(d.receiptId)) && receipt.requestId == d.requestId && receipt.reference == d.reference && receipt.createdAt == request.time;
+    }
+    match /protectedWallets/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || supervisor());
+      allow create,update: if signedIn() && request.resource.data.keys().hasOnly(['balance','lastOperationId','updatedAt']) &&
+        request.resource.data.updatedAt == request.time &&
+        getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.lastOperationId)).data.uid == uid &&
+        validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.lastOperationId)).data, request.resource.data.lastOperationId);
+    }
+    match /protectedLedger/{id} {
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if validLedger(request.resource.data,id);
+    }
+    match /protectedLicenses/{id} {
+      allow update: if supervisor() && resource.data.status == 'active' && request.resource.data.status == 'revoked' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','revokedBy','revokedAt','reason']) &&
+        request.resource.data.revokedBy == request.auth.uid && request.resource.data.revokedAt == request.time &&
+        request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500;
+
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.operationId)).data.licenseId == id &&
+        validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$(request.resource.data.operationId)).data,request.resource.data.operationId);
+    }
+    function validTopupRequest(d) {
+      let method = get(/databases/$(database)/documents/protectedPaymentMethods/$(d.methodId)).data;
+      return signedIn() && d.uid == request.auth.uid && d.status == 'pending-review' && d.credits is int && d.credits > 0 && d.credits <= 1000000 &&
+        method.enabled == true && d.methodLabel == method.label && d.recipient == method.recipient &&
+        d.createdAt == request.time && d.updatedAt == request.time && d.reference is string && d.reference.size() <= 100 &&
+        (d.methodId == 'dutch-bangla' ? (d.senderAccountNumber is string && d.senderAccountNumber.size() >= 6 && d.senderAccountNumber.size() <= 64) : d.reference.matches('^[A-Z0-9_-]{4,100}$')) &&
+        (method.currency == 'USDT' ? (d.currency == 'USDT' && d.network == method.network && d.reference.matches('^0X[A-F0-9]{64}$') &&
+          d.amountMinor is int && d.amountMinor >= method.minimumAmountMinor &&
+          d.amountMinor * method.bdtPerUsdtMinor >= d.credits * 100000000 && (d.amountMinor - 1) * method.bdtPerUsdtMinor < d.credits * 100000000) :
+          (d.currency == 'BDT' && d.amountMinor == d.credits * 100));
+    }
+    match /protectedTopupRequests/{id} {
+      allow get,list: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || supervisor());
+      allow create: if validTopupRequest(request.resource.data);
+      allow update: if supervisor() && resource.data.status == 'pending-review' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reason','verifiedReference','reviewedBy','reviewedAt']) &&
+        request.resource.data.reviewedBy == request.auth.uid && request.resource.data.reviewedAt == request.time &&
+        (request.resource.data.status == 'rejected' ? request.resource.data.reason is string && request.resource.data.reason.size() >= 3 :
+          request.resource.data.status == 'approved' && validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$('topup_' + id)).data,'topup_' + id));
+    }
+    match /protectedTopupReceipts/{id} {
+      allow get: if supervisor();
+      allow create: if supervisor() && validLedger(getAfter(/databases/$(database)/documents/protectedLedger/$('topup_' + request.resource.data.requestId)).data,'topup_' + request.resource.data.requestId);
+    }
+    match /protectedPaymentMethods/{id} { allow get,list: if signedIn(); allow create,update: if supervisor(); }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

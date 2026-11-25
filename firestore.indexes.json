@@ -1,0 +1,8 @@
+{
+  "indexes": [
+    { "collectionGroup": "sparkRequests", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "libraryId", "order": "ASCENDING" }, { "fieldPath": "state", "order": "ASCENDING" } ] },
+    { "collectionGroup": "requests", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "readerUid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "requests", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "libraryId", "order": "ASCENDING" }, { "fieldPath": "state", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

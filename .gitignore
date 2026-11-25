@@ -26,3 +26,16 @@ firebase-adminsdk*.json
 /.vscode/
 .DS_Store
 Thumbs.db
+
+# Firebase local build output.
+/functions/node_modules/
+/.firebase/
+*.log
+/staging-config.json
+/spark-config.json
+
+# Generated Firebase rights package; source remains under protected/.
+/functions/rights/
+
+# Generated self-hosted PDF.js support assets.
+/public/pdf-assets/

@@ -1,0 +1,31 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "build:pages": "node scripts/build-pages.cjs",
+    "test": "node --test tests/demo-store.test.cjs tests/localization.test.cjs tests/circulation.test.cjs tests/build-config.test.cjs tests/reader-session.test.cjs tests/borrowing-intent.test.cjs tests/drive-books.test.cjs tests/public-config.test.cjs tests/catalogue-holdings.test.cjs tests/admin-review.test.cjs tests/borrow-confirmation.test.cjs tests/protected-offer.test.cjs tests/protected-client.test.cjs tests/protected-catalogue.test.cjs tests/focused-book-reader.test.cjs tests/protected-components.test.cjs tests/protected-google-identity.test.cjs tests/protected-firestore-host.test.cjs",
+    "emulators": "firebase emulators:start --project demo-book-warehouse",
+    "seed": "node scripts/seed-emulator.cjs",
+    "test:emulator": "firebase emulators:exec --project demo-book-warehouse --only firestore,auth,functions,storage \"node --test tests/emulator.test.cjs\"",
+    "protected:serve": "node protected/server.cjs",
+    "test:protected": "node --test tests/protected-ledger.test.cjs tests/protected-rules.test.cjs tests/protected-pdf.test.cjs tests/protected-components.test.cjs",
+    "test:protected-api": "node --test tests/protected-api.test.cjs",
+    "test:protected-google": "node --test tests/protected-google-identity.test.cjs",
+    "test:protected-topups": "node --test tests/protected-topups.test.cjs",
+    "test:protected-catalogue": "node --test tests/protected-catalogue.test.cjs",
+    "test:focused-reader": "node --test tests/focused-book-reader.test.cjs",
+    "test:firebase-rules": "node --test tests/firebase-credit-store.test.cjs tests/publishing-rules.test.cjs",
+    "postinstall": "node scripts/prepare-pdf-assets.cjs"
+  },
+  "dependencies": {
+    "firebase": "^12.0.0",
+    "pdfjs-dist": "^6.5.438"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase-admin": "^13.0.0",
+    "vite": "^7.0.0"
+  },
+  "version": "0.1.2"
+}
